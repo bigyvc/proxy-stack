@@ -267,6 +267,21 @@ chk "no key → error, saying so" bash -c 'out=$(psm sni find --engine quake --j
 chk "an unknown engine → 2" bash -c 'psm sni find --engine shodan --key-stdin <<<"k"; [[ $? == 2 ]]'
 kill "$netlas" 2>/dev/null
 
+sec "psm sni check: the TLS check alone (the panel asks the engine, the key stays there)"
+# the same real hosts, as the panel sends them; one that fails the check and
+# two that are not what they claim to be (never handed to openssl)
+pairs=$(jq -c '{pairs: ([.items[] | {sni: .data.certificate.subject.common_name[0], dest: "\(.data.ip):443"}]
+                        + [{sni: "www.cloudflare.com", dest: "192.0.2.1:443"},
+                           {sni: "-servername x", dest: "1.1.1.1:443"}, {sni: "a.example.com", dest: "1.1.1.1:443 -x"}])}' \
+        /tmp/netlas/api/responses/index.html)
+chk "the good ones pass, the unreachable one does not" bash -c \
+    'psm sni check --input - --json <<<'"'$pairs'"' | tee /dev/stderr | jq -e "(.candidates | length > 0) and all(.candidates[]; .dest != \"192.0.2.1:443\" and (.sni | startswith(\"-\") | not))"'
+chk "no candidate that is a name and a host:port → 2" bash -c \
+    'psm sni check --input - <<<"{\"pairs\":[{\"sni\":\"x;y\",\"dest\":\"1.1.1.1:443\"}]}"; [[ $? == 2 ]]'
+chk "not JSON → 2" bash -c 'psm sni check --input - <<<"hello"; [[ $? == 2 ]]'
+chk "none passing is an empty list, not an error" bash -c \
+    'psm sni check --input - --json <<<"{\"pairs\":[{\"sni\":\"www.cloudflare.com\",\"dest\":\"192.0.2.1:443\"}]}" | jq -e ".candidates == []"'
+
 echo
 echo "=== RESULT: $pass ok, $fail failed"
 (( fail == 0 )) || { printf '  - %s\n' "${failed[@]}"; exit 1; }

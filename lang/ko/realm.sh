@@ -34,6 +34,7 @@ MSG[realm.port_listening_warn]="포트 %s는 현재 로컬 서비스가 수신 �
 MSG[realm.port_reserved_warn]="포트 %s는 로컬 서비스, 허용된 방화벽 포트, 설정된 노드 또는 허니팟에서 사용 중인 것으로 보입니다."
 MSG[realm.ask.delete_tag]="삭제할 규칙 태그"
 MSG[realm.rule_not_found]="규칙을 찾을 수 없음: %s"
+MSG[realm.gost_rule]="%s 은(는) gost 중계(부하 분산, 터널 또는 속도 제한)입니다. psm relay 명령이나 패널에서 변경하세요"
 MSG[realm.ask.delete_rule]="규칙 '%s'(로컬 포트 %s)를 삭제할까요?"
 MSG[realm.rule_deleted]="규칙 '%s'가 삭제되었습니다. 기존 수신 포트 %s가 방화벽에 열려 있었다면 더 이상 필요 없을 때 수동으로 닫으세요."
 MSG[realm.ask.modify_tag]="수정할 규칙 태그"

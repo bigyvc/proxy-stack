@@ -284,7 +284,7 @@ route_delete() {
         log_warn "$(t xray.invalid_option)"; return; fi
 
     local del_id="${ids_arr[$((sel-1))]}"
-    local new_rules; new_rules=$(echo "$rules" | jq "del(.[] | select(.id == \"$del_id\"))")
+    local new_rules; new_rules=$(echo "$rules" | jq --arg id "$del_id" 'del(.[] | select(.id == $id))')
     _route_save "$new_rules"
     _route_apply_to_xray
     xray_test_restart

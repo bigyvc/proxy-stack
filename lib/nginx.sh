@@ -441,24 +441,43 @@ _sni_harden_default() {
     log_ok "$(t nginx.sni.default_blackholed "$old")"
 }
 
+# An SNI map key is a domain (a map without "hostnames" matches it exactly),
+# never "default" — the key of the blackhole below the entries — and an
+# upstream is host:port, nothing that could end the line and start another
+# directive.
+_sni_valid_upstream() {
+    [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9a-fA-F:.]+\]):[0-9]{1,5}$ ]] \
+        && (( 10#${1##*:} >= 1 && 10#${1##*:} <= 65535 ))
+}
+
 _sni_add_entry() {
     local domain="$1" upstream="$2"
+    is_domain "$domain" || { log_error "$(t nginx.invalid_domain): $domain"; return 1; }
+    _sni_valid_upstream "$upstream" || { log_error "$(t nginx.invalid_upstream "$upstream")"; return 1; }
     local file; file="$(_sni_map_file)"
     [[ -f "$file" ]] || nginx_ensure_stream_sni || return 1
 
-    local tmp; tmp=$(mktemp)
+    local tmp prev; tmp=$(mktemp) || return 1; prev=$(mktemp) || { rm -f "$tmp"; return 1; }
+    cp -p "$file" "$prev"
     if awk -v domain="$domain" '$1 == domain {found=1} END {exit found ? 0 : 1}' "$file"; then
         awk -v domain="$domain" -v upstream="$upstream" \
             '$1 == domain {$0 = "    " domain "   " upstream ";"} {print}' "$file" > "$tmp" \
-            && mv "$tmp" "$file"
+            && cat "$tmp" > "$file"
         log_info "$(t nginx.sni.updated "$domain" "$upstream")"
     else
         awk -v line="    ${domain}   ${upstream};" \
             '/# PSM:ENTRIES:END/ {print line} {print}' "$file" > "$tmp" \
-            && mv "$tmp" "$file"
+            && cat "$tmp" > "$file"
         log_info "$(t nginx.sni.added "$domain" "$upstream")"
     fi
-    nginx_test_reload
+    rm -f "$tmp"
+    # a map Nginx refuses is put back as it was (the running Nginx never took it)
+    if ! nginx_test_reload; then
+        cat "$prev" > "$file"; rm -f "$prev"
+        nginx_test_reload >/dev/null 2>&1 || true
+        return 1
+    fi
+    rm -f "$prev"
     log_ok "$(t nginx.sni.ready "$domain" "$upstream")"
 }
 
@@ -480,10 +499,13 @@ _sni_lookup_entry() {
 
 _sni_remove_entry() {
     local domain="$1"
+    # a domain entry only: "default" is the blackhole, "#" a comment line
+    is_domain "$domain" || { log_error "$(t nginx.invalid_domain): $domain"; return 1; }
     local file; file="$(_sni_map_file)"
     [[ -f "$file" ]] || return 0
-    local tmp; tmp=$(mktemp)
-    awk -v domain="$domain" '$1 != domain {print}' "$file" > "$tmp" && mv "$tmp" "$file"
+    local tmp; tmp=$(mktemp) || return 1
+    awk -v domain="$domain" '$1 != domain {print}' "$file" > "$tmp" && cat "$tmp" > "$file"
+    rm -f "$tmp"
     nginx_test_reload
     log_ok "$(t nginx.sni.removed "$domain")"
 }
@@ -525,6 +547,8 @@ add_site() {
     is_domain "$domain" || { log_error "$(t nginx.invalid_domain)"; return 1; }
 
     ask proxy_pass "$(t nginx.ask.proxy_pass)"
+    # host:port only: the value lands inside a directive of the site's config
+    _sni_valid_upstream "$proxy_pass" || { log_error "$(t nginx.invalid_upstream "$proxy_pass")"; return 1; }
     ask_yn "$(t nginx.ask.tls)" Y && tls="yes"
     ask_yn "$(t nginx.ask.h3)" N && h3="yes"
     ask_yn "$(t nginx.ask.ws)" N && ws="yes"
@@ -573,9 +597,15 @@ server {
 EOF
 
     # Add SNI entry so stream routes TLS to this http server
-    [[ "$tls" == "yes" ]] && _sni_add_entry "$domain" "127.0.0.1:8443"
+    [[ "$tls" == "yes" ]] && { _sni_add_entry "$domain" "127.0.0.1:8443" || true; }
 
-    nginx_test_reload
+    # a site Nginx refuses is taken out again: it would stop every later reload
+    if ! nginx_test_reload; then
+        rm -f "$conf_file"
+        [[ "$tls" == "yes" ]] && { _sni_remove_entry "$domain" >/dev/null 2>&1 || true; }
+        nginx_test_reload >/dev/null 2>&1 || true
+        return 1
+    fi
     log_ok "$(t nginx.site.created "$conf_file")"
 }
 
@@ -721,8 +751,11 @@ delete_site() {
     list_sites
     local domain
     ask domain "$(t nginx.ask.delete_domain)"
+    # a domain, so the file named after it is one of the sites (no "../")
+    is_domain "$domain" || { log_error "$(t nginx.invalid_domain): $domain"; return 1; }
+    [[ -f "$NGINX_HTTP_D/${domain}.conf" ]] || { log_error "$(t nginx.not_found "$NGINX_HTTP_D/${domain}.conf")"; return 1; }
     rm -f "$NGINX_HTTP_D/${domain}.conf"
-    _sni_remove_entry "$domain" 2>/dev/null
+    _sni_remove_entry "$domain" 2>/dev/null || true
     nginx_test_reload
     log_ok "$(t nginx.site.deleted "$domain")"
 }
@@ -731,13 +764,21 @@ modify_site_upstream() {
     list_sites
     local domain new_upstream
     ask domain "$(t nginx.ask.modify_domain)"
+    is_domain "$domain" || { log_error "$(t nginx.invalid_domain): $domain"; return 1; }
     local conf="$NGINX_HTTP_D/${domain}.conf"
     [[ -f "$conf" ]] || { log_error "$(t nginx.not_found "$conf")"; return 1; }
     local cur; cur=$(grep "proxy_pass" "$conf" | awk '{print $2}' | tr -d ';')
     log_info "$(t nginx.current_upstream "$cur")"
     ask new_upstream "$(t nginx.ask.new_upstream)"
+    # host:port only, which carries nothing sed or Nginx would read as syntax
+    _sni_valid_upstream "$new_upstream" || { log_error "$(t nginx.invalid_upstream "$new_upstream")"; return 1; }
+    local prev; prev=$(mktemp) || return 1
+    cp -p "$conf" "$prev"
     sed -i "s|proxy_pass .*;|proxy_pass http://${new_upstream};|" "$conf"
-    nginx_test_reload
+    if ! nginx_test_reload; then
+        cat "$prev" > "$conf"; rm -f "$prev"; nginx_test_reload >/dev/null 2>&1 || true; return 1
+    fi
+    rm -f "$prev"
 }
 
 # ── View logs ─────────────────────────────────────────────────────────────────
@@ -797,6 +838,30 @@ nginx_menu() {
             13) nginx_logs ;;
             14) svc_status nginx ;;
             0)  return ;;
+        esac
+        press_enter
+    done
+}
+
+# The main menu's 网站管理: the sites alone (reverse-proxied sites behind the
+# shared 443), without the rest of Nginx's menu — it used to open that menu.
+website_menu() {
+    _nginx_check_deps || return
+    while true; do
+        show_menu "$(t menu.main.website)" \
+            "$(t nginx.menu.add_site)" \
+            "$(t nginx.menu.delete_site)" \
+            "$(t nginx.menu.modify_upstream)" \
+            "$(t nginx.menu.list_sites)" \
+            "$(t nginx.menu.logs)"
+
+        case "$MENU_CHOICE" in
+            1) add_site ;;
+            2) delete_site ;;
+            3) modify_site_upstream ;;
+            4) list_sites ;;
+            5) nginx_logs ;;
+            0) return ;;
         esac
         press_enter
     done

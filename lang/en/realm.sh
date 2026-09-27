@@ -34,6 +34,7 @@ MSG[realm.port_listening_warn]="Port %s is currently listened on by a local serv
 MSG[realm.port_reserved_warn]="Port %s appears to be used by a local service, allowed firewall port, configured node, or honeypot."
 MSG[realm.ask.delete_tag]="Rule tag to delete"
 MSG[realm.rule_not_found]="Rule not found: %s"
+MSG[realm.gost_rule]="%s is a gost relay (balancing, tunnel or rate limit); change it with psm relay or the panel"
 MSG[realm.ask.delete_rule]="Delete rule '%s' (local port %s)?"
 MSG[realm.rule_deleted]="Rule '%s' deleted. If old listen port %s was opened in the firewall, close it manually when no longer needed."
 MSG[realm.ask.modify_tag]="Rule tag to modify"

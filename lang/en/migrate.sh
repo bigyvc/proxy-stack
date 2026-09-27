@@ -1,6 +1,6 @@
 # migrate.sh — English
 MSG[migrate.usage]="Usage:
-  psm migrate export [--output FILE] [--encrypt]    Bundle this server: nodes, keys, certificates, Nginx, acme.sh
+  psm migrate export [--output FILE] [--no-encrypt] Bundle this server: nodes, keys, certificates, Nginx, acme.sh (encrypted with a passphrase unless --no-encrypt)
   psm migrate import FILE [--yes] [--force]         Rebuild a bundled server on this host
   psm migrate push [USER@]HOST [--port N] [--identity KEY] [--force]
                                                     Export, copy PSM and the bundle over SSH, import there"
@@ -10,7 +10,7 @@ MSG[migrate.pack_failed]="Could not write the bundle."
 MSG[migrate.exported]="Bundle written: %s (%s, %s node(s))."
 MSG[migrate.secret_warn]="It holds every private key and password of this server: move it over SSH only, and delete it once imported."
 MSG[migrate.next_steps]="On the new server: psm migrate import %s   (or in one step from here: psm migrate push root@NEW-SERVER)"
-MSG[migrate.need_pass]="The passphrase is needed: set PSM_MIGRATE_PASS or run this in a terminal."
+MSG[migrate.need_pass]="The passphrase is needed: set PSM_MIGRATE_PASS or run this in a terminal (--no-encrypt for a bundle without one)."
 MSG[migrate.ask_pass]="Bundle passphrase:"
 MSG[migrate.ask_pass2]="Repeat the passphrase:"
 MSG[migrate.pass_mismatch]="The passphrase is empty or the two entries differ."
@@ -50,3 +50,4 @@ MSG[migrate.push.failed]="The import on %s failed (its output is above). The bun
 MSG[migrate.menu.export]="Export for migration to another server"
 MSG[migrate.menu.import]="Import a migration bundle"
 MSG[migrate.ask_file]="Bundle path:"
+MSG[migrate.ask_encrypt]="The bundle holds every private key and password here. Encrypt it with a passphrase?"

@@ -125,10 +125,29 @@ jobs:
           - { os: debian,   suite: panelside }
           - { os: alpine,   suite: panelside }
           - { os: rocky9,   suite: panelside }
+          - { os: debian,   suite: audit }
+          - { os: alpine,   suite: audit }
+          - { os: rocky9,   suite: audit }
     steps:
       - uses: actions/checkout@v4
       - name: tests/integration/container.sh ${{ matrix.os }} ${{ matrix.suite }}
         run: bash tests/integration/container.sh "${{ matrix.os }}" "${{ matrix.suite }}"
+
+  relay:
+    name: ${{ matrix.os }} · relay (entry, exit, landings and a client)
+    if: github.repository == 'jinqians/proxy-stack'
+    needs: checks
+    runs-on: [self-hosted, linux, psm-vps]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [debian, alpine, rocky9]
+    steps:
+      - uses: actions/checkout@v4
+      # its own machines (two servers of the family, two landings, a client): run on the host
+      - name: tests/integration/relay.sh ${{ matrix.os }}
+        run: bash tests/integration/relay.sh "${{ matrix.os }}"
 
   migrate:
     name: migrate ${{ matrix.src }} → ${{ matrix.dst }} (${{ matrix.mode }})

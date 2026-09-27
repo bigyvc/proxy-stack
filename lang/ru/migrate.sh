@@ -1,6 +1,6 @@
 # migrate.sh — Русский
 MSG[migrate.usage]="Использование:
-  psm migrate export [--output ФАЙЛ] [--encrypt]    Упаковать этот сервер: узлы, ключи, сертификаты, Nginx, acme.sh
+  psm migrate export [--output ФАЙЛ] [--no-encrypt] Упаковать этот сервер: узлы, ключи, сертификаты, Nginx, acme.sh (по умолчанию шифруется паролем)
   psm migrate import ФАЙЛ [--yes] [--force]         Восстановить упакованный сервер на этой машине
   psm migrate push [ПОЛЬЗОВАТЕЛЬ@]ХОСТ [--port N] [--identity КЛЮЧ] [--force]
                                                     Экспорт, копирование PSM и пакета по SSH, импорт там"
@@ -10,7 +10,7 @@ MSG[migrate.pack_failed]="Не удалось записать пакет."
 MSG[migrate.exported]="Пакет записан: %s (%s, узлов: %s)."
 MSG[migrate.secret_warn]="В нём все закрытые ключи и пароли этого сервера: переносите его только по SSH и удалите после импорта."
 MSG[migrate.next_steps]="На новом сервере: psm migrate import %s   (или одним шагом отсюда: psm migrate push root@НОВЫЙ-СЕРВЕР)"
-MSG[migrate.need_pass]="Нужна парольная фраза: задайте PSM_MIGRATE_PASS или запустите в терминале."
+MSG[migrate.need_pass]="Нужна парольная фраза: задайте PSM_MIGRATE_PASS или запустите в терминале (без шифрования: --no-encrypt)."
 MSG[migrate.ask_pass]="Парольная фраза пакета:"
 MSG[migrate.ask_pass2]="Повторите парольную фразу:"
 MSG[migrate.pass_mismatch]="Парольная фраза пуста или два ввода не совпадают."
@@ -50,3 +50,4 @@ MSG[migrate.push.failed]="Импорт на %s не удался (вывод в�
 MSG[migrate.menu.export]="Экспорт для переноса на другой сервер"
 MSG[migrate.menu.import]="Импорт пакета миграции"
 MSG[migrate.ask_file]="Путь к пакету:"
+MSG[migrate.ask_encrypt]="В пакете все закрытые ключи и пароли этого сервера. Зашифровать его паролем?"

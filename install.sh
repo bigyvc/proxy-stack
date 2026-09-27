@@ -74,15 +74,13 @@ setup_directories() {
 }
 
 make_executable() {
-    chmod +x "$PSM_ROOT/manager.sh" \
-              "$PSM_ROOT/install.sh" \
-              "$PSM_ROOT/update.sh" \
-              "$PSM_ROOT/uninstall.sh" \
-              "$LIB_DIR"/*.sh
+    # every script, the modules in subdirectories (lib/xray, lib/security…) too
+    find "$PSM_ROOT" -name '*.sh' -not -path '*/.git/*' -exec chmod +x {} +
 }
 
 install_symlink() {
-    ln -sf "$PSM_ROOT/manager.sh" /usr/local/bin/psm
+    # -n: a /usr/local/bin/psm that is a directory is replaced, not written into
+    ln -sfn "$PSM_ROOT/manager.sh" /usr/local/bin/psm
     log_ok "$(t install.cmd_created "$PSM_ROOT/manager.sh")"
 }
 

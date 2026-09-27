@@ -15,6 +15,9 @@ EXPIRY_LOG="${LOG_DIR}/expiry.log"
 _EXP_TZ="Asia/Hong_Kong"
 
 # ── State helpers ─────────────────────────────────────────────────────────────
+# a temporary file for the state sits next to it, so mv is an atomic rename
+_exp_tmp() { mktemp "$EXPIRY_STATE.XXXXXX"; }
+
 _exp_init() {
     mkdir -p "$EXPIRY_DIR"
     [[ -f "$EXPIRY_STATE" ]] || echo '{}' > "$EXPIRY_STATE"
@@ -44,7 +47,7 @@ exp_set() {
     local tag="$1" port="$2" exp_hk="$3"
     _exp_init
     [[ "$exp_hk" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && exp_hk="${exp_hk} 23:59:59"
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_exp_tmp)
     jq --arg t "$tag" --argjson p "$port" --arg e "$exp_hk" '
         if .[$t] == null then
             .[$t] = {"port": $p, "expires_at": $e,
@@ -74,7 +77,7 @@ exp_renew() {
         base="$(_exp_hk_now)"
     fi
     local new_exp; new_exp=$(TZ="$_EXP_TZ" date -d "$base +${months} months" '+%Y-%m-%d %H:%M:%S')
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_exp_tmp)
     jq --arg t "$tag" --arg e "$new_exp" '
         .[$t].expires_at      = $e
         | .[$t].notified_7d   = false
@@ -95,7 +98,7 @@ exp_tag_for_port() {
 }
 
 exp_delete() {
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_exp_tmp)
     jq --arg t "$1" 'del(.[$t])' "$EXPIRY_STATE" > "$tmp" && mv "$tmp" "$EXPIRY_STATE"
 }
 
@@ -108,7 +111,8 @@ expiry_check() {
         local expires_at; expires_at=$(_exp_get "$tag" "expires_at")
         [[ -z "$expires_at" ]] && continue
         local exp_ts; exp_ts=$(_exp_str_to_ts "$expires_at")
-        (( exp_ts == 0 )) && continue
+        # a date that does not parse is said, not skipped without a word
+        (( exp_ts == 0 )) && { log_warn "$(t expiry.unparsed "$tag" "$expires_at")"; continue; }
 
         local port; port=$(_exp_get "$tag" "port")
         local diff=$(( exp_ts - now_ts ))
@@ -123,7 +127,7 @@ expiry_check() {
             # _trf_pause_tag is defined in traffic.sh which sources this file,
             # so it is available at call time.
             declare -f _trf_pause_tag &>/dev/null && _trf_pause_tag "$tag" 2>/dev/null || true
-            local _t; _t=$(mktemp)
+            local _t; _t=$(_exp_tmp)
             jq --arg t "$tag" '.[$t].expired_paused = true' \
                 "$EXPIRY_STATE" > "$_t" && mv "$_t" "$EXPIRY_STATE"
             tg_notify_expiry_expired "$port" "$expires_at" 2>/dev/null || true
@@ -140,7 +144,7 @@ _exp_maybe_notify() {
         field="notified_${days}d"
         if (( diff <= days * 86400 )) && [[ "$(_exp_get "$tag" "$field")" != "true" ]]; then
             tg_notify_expiry_warn "$port" "$exp_str" "$days" 2>/dev/null || true
-            _t=$(mktemp)
+            _t=$(_exp_tmp)
             jq --arg t "$tag" --arg f "$field" '.[$t][$f] = true' \
                 "$EXPIRY_STATE" > "$_t" && mv "$_t" "$EXPIRY_STATE"
         fi

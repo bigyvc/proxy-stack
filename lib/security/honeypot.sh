@@ -5,11 +5,17 @@
 # to expose (RDP/MSSQL/Telnet/etc — this is a proxy VPS, not a database or
 # Windows host). Any packet to these ports is inherently a probe, so unlike
 # fail2ban's SSH jail (which tolerates a few retries because real users mistype
-# passwords), a single hit here is enough to ban permanently.
+# passwords), a single hit here is enough to ban.
 #
 # Mechanism: iptables LOG+DROP on each port (no fake service needed — a SYN
-# is already the signal), consumed by a dedicated fail2ban jail (maxretry=1,
-# bantime=-1) that also fires a Telegram alert via a custom fail2ban action.
+# is already the signal), consumed by a dedicated fail2ban jail (maxretry=1)
+# that also fires a Telegram alert via a custom fail2ban action.
+#
+# The ban covers every port, SSH included — a scanner is often also guessing
+# passwords — so it is never permanent: 7 days, longer for each repeat (up to
+# 4 weeks). An admin who scans their own box to check it (an nmap, a monitor
+# probing ports) would otherwise lock themselves out for good; enabling the
+# honeypot also puts the SSH client it is enabled from on the whitelist.
 
 if [[ -z "${PSM_ROOT:-}" ]]; then
     _D="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
@@ -148,16 +154,21 @@ _hp_ensure_iptables() {
     return 1
 }
 
+# The rules go first in INPUT: appended, they sat behind ufw's chains, whose
+# default drop took the packet before the LOG line the jail reads was written.
+# DROP is inserted before LOG, so LOG ends up above it.
 _hp_apply_port() {
-    local port="$1"
-    iptables -C INPUT -p tcp --dport "$port" -j LOG --log-prefix "$HP_LOG_PREFIX" --log-level 4 2>/dev/null \
-        || iptables -A INPUT -p tcp --dport "$port" -j LOG --log-prefix "$HP_LOG_PREFIX" --log-level 4
-    iptables -C INPUT -p tcp --dport "$port" -j DROP 2>/dev/null \
-        || iptables -A INPUT -p tcp --dport "$port" -j DROP
-    ip6tables -C INPUT -p tcp --dport "$port" -j LOG --log-prefix "$HP_LOG_PREFIX" --log-level 4 2>/dev/null \
-        || ip6tables -A INPUT -p tcp --dport "$port" -j LOG --log-prefix "$HP_LOG_PREFIX" --log-level 4 2>/dev/null || true
-    ip6tables -C INPUT -p tcp --dport "$port" -j DROP 2>/dev/null \
-        || ip6tables -A INPUT -p tcp --dport "$port" -j DROP 2>/dev/null || true
+    local port="$1" ipt
+    for ipt in iptables ip6tables; do
+        if ! command -v "$ipt" &>/dev/null; then
+            [[ "$ipt" == ip6tables ]] && log_warn "$(t security.hp.no_ip6tables)"
+            continue
+        fi
+        "$ipt" -C INPUT -p tcp --dport "$port" -j DROP 2>/dev/null \
+            || "$ipt" -I INPUT 1 -p tcp --dport "$port" -j DROP 2>/dev/null || true
+        "$ipt" -C INPUT -p tcp --dport "$port" -j LOG --log-prefix "$HP_LOG_PREFIX" --log-level 4 2>/dev/null \
+            || "$ipt" -I INPUT 1 -p tcp --dport "$port" -j LOG --log-prefix "$HP_LOG_PREFIX" --log-level 4 2>/dev/null || true
+    done
 }
 
 _hp_remove_port() {
@@ -243,14 +254,18 @@ _hp_write_jail() {
     fi
 
     cat > "$HP_JAIL_FILE" <<EOF
-# Managed by PSM — 命中即永久封禁：这些端口本机没有任何合法服务，第一次触碰就是探测
+# Managed by PSM — 这些端口本机没有任何合法服务，第一次触碰就是探测：封禁 7 天，
+# 反复命中逐次加长（最长 4 周）。不永久封禁：管理员自测（nmap、监控探测）误触时
+# 不至于把自己永远锁在外面；启用时已把当前 SSH 客户端加入白名单。
 [psm-honeypot]
 enabled      = true
 filter       = psm-honeypot
 ${source_lines}
 maxretry     = 1
 findtime     = 1d
-bantime      = -1
+bantime      = 7d
+bantime.increment = true
+bantime.maxtime   = 4w
 port         = 0:65535
 banaction    = ${banaction}
 action       = %(banaction)s[port="%(port)s", protocol="%(protocol)s", chain="%(chain)s"]
@@ -298,6 +313,14 @@ hp_install() {
     echo -e "${YELLOW}$(t security.hp.apply_note2)${NC}"
     echo -e "${YELLOW}$(t security.hp.apply_note3)${NC}"
     ask_yn "$(t security.hp.ask_apply)" Y || { log_info "$(t common.cancelled)"; return 0; }
+
+    # the machine enabling it: whitelisted first, so a scan of its own does not ban it
+    local me; me=$(declare -f _f2b_current_client_ip >/dev/null && _f2b_current_client_ip || true)
+    if [[ -n "$me" ]] && declare -f f2b_whitelist_ip >/dev/null; then
+        f2b_whitelist_ip "$me" && log_info "$(t security.hp.whitelisted_me "$me")"
+    else
+        log_warn "$(t security.hp.not_whitelisted)"
+    fi
 
     hp_apply_rules
     _hp_write_filter

@@ -1,6 +1,6 @@
 # migrate.sh — 中文
 MSG[migrate.usage]="用法：
-  psm migrate export [--output 文件] [--encrypt]    打包本机：节点、密钥、证书、Nginx、acme.sh
+  psm migrate export [--output 文件] [--no-encrypt] 打包本机：节点、密钥、证书、Nginx、acme.sh（默认用口令加密）
   psm migrate import 文件 [--yes] [--force]         在本机还原打包的服务器
   psm migrate push [用户@]主机 [--port N] [--identity 密钥] [--force]
                                                     导出后经 SSH 把 PSM 和迁移包传过去，并在对端导入"
@@ -10,7 +10,7 @@ MSG[migrate.pack_failed]="迁移包写入失败。"
 MSG[migrate.exported]="迁移包已生成：%s（%s，%s 个节点）。"
 MSG[migrate.secret_warn]="迁移包含有本机全部私钥和密码：只通过 SSH 传输，导入后请删除。"
 MSG[migrate.next_steps]="在新服务器上执行：psm migrate import %s   （或在本机一步完成：psm migrate push root@新服务器）"
-MSG[migrate.need_pass]="需要口令：请设置 PSM_MIGRATE_PASS，或在终端里运行。"
+MSG[migrate.need_pass]="需要口令：请设置 PSM_MIGRATE_PASS，或在终端里运行（不加密导出：--no-encrypt）。"
 MSG[migrate.ask_pass]="迁移包口令："
 MSG[migrate.ask_pass2]="再输一次口令："
 MSG[migrate.pass_mismatch]="口令为空，或两次输入不一致。"
@@ -50,3 +50,4 @@ MSG[migrate.push.failed]="%s 上的导入失败（输出见上方）。迁移包
 MSG[migrate.menu.export]="导出迁移包（迁移到另一台服务器）"
 MSG[migrate.menu.import]="导入迁移包"
 MSG[migrate.ask_file]="迁移包路径："
+MSG[migrate.ask_encrypt]="迁移包含本机所有私钥和密码，用口令加密吗？"

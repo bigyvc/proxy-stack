@@ -1,0 +1,355 @@
+{
+  "chains": [
+    {
+      "hops": [
+        {
+          "name": "t-in-chain-hop",
+          "nodes": [
+            {
+              "addr": "203.0.113.5:28443",
+              "connector": {
+                "auth": {
+                  "password": "0123456789abcdef0123456789abcdef",
+                  "username": "t-in"
+                },
+                "type": "relay"
+              },
+              "dialer": {
+                "metadata": {
+                  "host": "cdn.example.com",
+                  "path": "/cdn"
+                },
+                "tls": {
+                  "caFile": "/opt/psm/config/realm/pins/t-in.crt",
+                  "serverName": "www.example.com"
+                },
+                "type": "mwss"
+              },
+              "name": "t-in-chain-exit"
+            }
+          ]
+        }
+      ],
+      "name": "t-in-chain"
+    },
+    {
+      "hops": [
+        {
+          "name": "t-in2-chain-hop",
+          "nodes": [
+            {
+              "addr": "exit.example.com:8443",
+              "connector": {
+                "auth": {
+                  "password": "fedcba9876543210",
+                  "username": "t-in2"
+                },
+                "type": "relay"
+              },
+              "dialer": {
+                "tls": {},
+                "type": "tls"
+              },
+              "name": "t-in2-chain-exit"
+            }
+          ]
+        }
+      ],
+      "name": "t-in2-chain"
+    },
+    {
+      "hops": [
+        {
+          "name": "t-in3-chain-hop",
+          "nodes": [
+            {
+              "addr": "[2001:db8::7]:8443",
+              "connector": {
+                "auth": {
+                  "password": "fedcba9876543210",
+                  "username": "t-in3"
+                },
+                "type": "relay"
+              },
+              "dialer": {
+                "tls": {
+                  "secure": true,
+                  "serverName": "exit.example.org"
+                },
+                "type": "mtls"
+              },
+              "name": "t-in3-chain-exit"
+            }
+          ]
+        }
+      ],
+      "name": "t-in3-chain"
+    }
+  ],
+  "limiters": [
+    {
+      "limits": [
+        "$ 2500000B 2500000B"
+      ],
+      "name": "g-fo-speed"
+    },
+    {
+      "limits": [
+        "$ 62500B 62500B"
+      ],
+      "name": "g-one-speed"
+    },
+    {
+      "limits": [
+        "$ 12500000B 12500000B"
+      ],
+      "name": "t-in-speed"
+    }
+  ],
+  "log": {
+    "level": "error"
+  },
+  "services": [
+    {
+      "addr": ":20003",
+      "forwarder": {
+        "nodes": [
+          {
+            "addr": "10.0.0.2:443",
+            "name": "g-lb-t0",
+            "probe": {
+              "addr": "10.0.0.2:443",
+              "interval": "15s",
+              "timeout": "5s",
+              "type": "tcp"
+            }
+          },
+          {
+            "addr": "10.0.0.3:443",
+            "name": "g-lb-t1",
+            "probe": {
+              "addr": "10.0.0.3:443",
+              "interval": "15s",
+              "timeout": "5s",
+              "type": "tcp"
+            }
+          }
+        ],
+        "selector": {
+          "failTimeout": "30s",
+          "maxFails": 1,
+          "strategy": "round"
+        }
+      },
+      "handler": {
+        "type": "tcp"
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "name": "g-lb-tcp"
+    },
+    {
+      "addr": ":20004",
+      "forwarder": {
+        "nodes": [
+          {
+            "addr": "10.0.0.2:8388",
+            "name": "g-fo-t0"
+          },
+          {
+            "addr": "[2001:db8::3]:8388",
+            "name": "g-fo-t1"
+          }
+        ],
+        "selector": {
+          "failTimeout": "30s",
+          "maxFails": 1,
+          "strategy": "fifo"
+        }
+      },
+      "handler": {
+        "type": "tcp"
+      },
+      "limiter": "g-fo-speed",
+      "listener": {
+        "type": "tcp"
+      },
+      "name": "g-fo-tcp"
+    },
+    {
+      "addr": ":20004",
+      "forwarder": {
+        "nodes": [
+          {
+            "addr": "10.0.0.2:8388",
+            "name": "g-fo-t0"
+          },
+          {
+            "addr": "[2001:db8::3]:8388",
+            "name": "g-fo-t1"
+          }
+        ],
+        "selector": {
+          "failTimeout": "30s",
+          "maxFails": 1,
+          "strategy": "fifo"
+        }
+      },
+      "handler": {
+        "type": "udp"
+      },
+      "limiter": "g-fo-speed",
+      "listener": {
+        "metadata": {
+          "keepAlive": true,
+          "readBufferSize": 8192,
+          "ttl": "60s"
+        },
+        "type": "udp"
+      },
+      "name": "g-fo-udp"
+    },
+    {
+      "addr": ":20005",
+      "forwarder": {
+        "nodes": [
+          {
+            "addr": "lan.example.com:22",
+            "name": "g-one-t0"
+          }
+        ],
+        "selector": {
+          "failTimeout": "30s",
+          "maxFails": 1,
+          "strategy": "round"
+        }
+      },
+      "handler": {
+        "type": "tcp"
+      },
+      "limiter": "g-one-speed",
+      "listener": {
+        "type": "tcp"
+      },
+      "name": "g-one-tcp"
+    },
+    {
+      "addr": ":28443",
+      "forwarder": {
+        "nodes": [
+          {
+            "addr": "127.0.0.1:443",
+            "name": "t-out-t0",
+            "probe": {
+              "addr": "127.0.0.1:443",
+              "interval": "15s",
+              "timeout": "5s",
+              "type": "tcp"
+            }
+          },
+          {
+            "addr": "10.0.0.3:443",
+            "name": "t-out-t1",
+            "probe": {
+              "addr": "10.0.0.3:443",
+              "interval": "15s",
+              "timeout": "5s",
+              "type": "tcp"
+            }
+          }
+        ],
+        "selector": {
+          "failTimeout": "30s",
+          "maxFails": 1,
+          "strategy": "fifo"
+        }
+      },
+      "handler": {
+        "auth": {
+          "password": "0123456789abcdef0123456789abcdef",
+          "username": "t-out"
+        },
+        "type": "relay"
+      },
+      "listener": {
+        "metadata": {
+          "path": "/cdn"
+        },
+        "tls": {
+          "certFile": "/opt/psm/config/realm/certs/tunnel-t-out.crt",
+          "keyFile": "/opt/psm/config/realm/certs/tunnel-t-out.key"
+        },
+        "type": "wss"
+      },
+      "name": "t-out-tun"
+    },
+    {
+      "addr": ":20443",
+      "handler": {
+        "chain": "t-in-chain",
+        "type": "tcp"
+      },
+      "limiter": "t-in-speed",
+      "listener": {
+        "type": "tcp"
+      },
+      "name": "t-in-tcp"
+    },
+    {
+      "addr": ":20443",
+      "handler": {
+        "chain": "t-in-chain",
+        "type": "udp"
+      },
+      "limiter": "t-in-speed",
+      "listener": {
+        "metadata": {
+          "keepAlive": true,
+          "readBufferSize": 8192,
+          "ttl": "60s"
+        },
+        "type": "udp"
+      },
+      "name": "t-in-udp"
+    },
+    {
+      "addr": ":20444",
+      "handler": {
+        "chain": "t-in2-chain",
+        "type": "tcp"
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "name": "t-in2-tcp"
+    },
+    {
+      "addr": ":20445",
+      "handler": {
+        "chain": "t-in3-chain",
+        "type": "tcp"
+      },
+      "listener": {
+        "type": "tcp"
+      },
+      "name": "t-in3-tcp"
+    },
+    {
+      "addr": ":20445",
+      "handler": {
+        "chain": "t-in3-chain",
+        "type": "udp"
+      },
+      "listener": {
+        "metadata": {
+          "keepAlive": true,
+          "readBufferSize": 8192,
+          "ttl": "60s"
+        },
+        "type": "udp"
+      },
+      "name": "t-in3-udp"
+    }
+  ]
+}

@@ -97,11 +97,13 @@ Usage:
   psm agent join|status|remove [...]
                               Connect this server to a PSM panel (psm-agent)
   psm sni find [...]          REALITY camouflage targets in this server's network (mapping engine + TLS check)
+  psm sni check --input -     the TLS check alone, for candidates found elsewhere (the panel's engine query)
   psm exit status|warp|vpngate [...]
                               The WARP and free residential exits (a node uses one with --exit)
-  psm relay list|show|add|update|delete|install [...]
-                              Relays (realm): forward a port to another server, the hop
-                              optionally wrapped in TLS (--tls)
+  psm relay list|show|add|update|delete|probe|install [...]
+                              Relays (realm or gost): forward a port to other servers,
+                              balance and fail over between them, tunnel to an exit
+                              machine over TLS / WSS, with rate limits, quotas and expiry
   psm version                 The PSM version (date and commit)
   psm migrate export|import|push [...]
                               Move this server to another host (psm migrate --help)
@@ -188,9 +190,15 @@ _auto_update() {
     local before
     before=$(git -C "$PSM_ROOT" rev-parse HEAD 2>/dev/null) || return 0
     log_step "$(t mgr.update.checking)"
-    # Discard any local modifications to script files before pulling.
-    # User data lives in /etc/psm/, not in the git repo, so dropping
-    # uncommitted changes to scripts is always safe. Same as update.sh.
+    # Local edits to PSM's own scripts would stop the pull, so they are put
+    # aside first — kept as a patch in logs/, the way update.sh keeps them,
+    # and said. PSM's state (config/, backup/, logs/) is not tracked by git
+    # (.gitignore) and is never touched by this.
+    git -C "$PSM_ROOT" config core.fileMode false 2>/dev/null || true   # chmod +x is no edit
+    if ! git -C "$PSM_ROOT" diff --quiet HEAD -- 2>/dev/null; then
+        local patch; patch="${HOME:-/root}/psm-local-changes-$(date +%Y%m%d%H%M%S).patch"
+        git -C "$PSM_ROOT" diff HEAD > "$patch" 2>/dev/null && log_warn "$(t update.local_saved "$patch")"
+    fi
     timeout 5  git -C "$PSM_ROOT" reset -q --hard HEAD 2>/dev/null || true
     psm_repo_slim "$PSM_ROOT" 2>/dev/null || true
     timeout 15 git -C "$PSM_ROOT" pull --ff-only -q 2>/dev/null || return 0
@@ -198,7 +206,7 @@ _auto_update() {
     after=$(git -C "$PSM_ROOT" rev-parse HEAD 2>/dev/null) || return 0
     [[ "$before" == "$after" ]] && return 0
     log_ok "$(t mgr.update.restarting)"
-    chmod +x "$PSM_ROOT"/*.sh "$LIB_DIR"/*.sh 2>/dev/null || true
+    find "$PSM_ROOT" -name '*.sh' -not -path '*/.git/*' -exec chmod +x {} + 2>/dev/null || true
     exec bash "$PSM_ROOT/manager.sh"
 }
 _auto_update
@@ -464,7 +472,7 @@ main() {
                 ;;
             9)
                 source "$LIB_DIR/nginx.sh"
-                nginx_menu
+                website_menu
                 ;;
             10)
                 source "$LIB_DIR/cert.sh"

@@ -13,19 +13,19 @@ _vision_load() { [[ -f "$VISION_CFG" ]] || echo "[]" > "$VISION_CFG"; cat "$VISI
 _vision_save() { mkdir -p "$(dirname "$VISION_CFG")"; echo "$1" > "$VISION_CFG"; }
 
 _vision_get_by_tag() {
-    _vision_load | jq ".[] | select(.tag == \"$1\")" 2>/dev/null
+    _vision_load | jq --arg t "$1" '.[] | select(.tag == $t)' 2>/dev/null
 }
 
 _vision_upsert() {
     local n="$1" tag; tag=$(echo "$n" | jq -r '.tag')
     local nodes; nodes=$(_vision_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$tag\")) | . += [$n]")
+    nodes=$(echo "$nodes" | jq --arg t "$tag" --argjson n "$n" 'del(.[] | select(.tag == $t)) | . += [$n]')
     _vision_save "$nodes"
 }
 
 _vision_delete() {
     local nodes; nodes=$(_vision_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$1\"))")
+    nodes=$(echo "$nodes" | jq --arg t "$1" 'del(.[] | select(.tag == $t))')
     _vision_save "$nodes"
 }
 

@@ -149,7 +149,8 @@ ensure_epel() {
     local pkg_cmd rhel_ver
     pkg_cmd=$(_rhel_pkg_cmd)
     rhel_ver=$(rpm -E %rhel 2>/dev/null)
-    [[ "$rhel_ver" =~ ^[0-9]+$ ]] || rhel_ver="${OS_VERSION%%.*}"
+    [[ "$rhel_ver" =~ ^[0-9]+$ ]] || rhel_ver="${OS_VERSION:-}"; rhel_ver="${rhel_ver%%.*}"
+    [[ "$rhel_ver" =~ ^[0-9]+$ ]] || { log_warn "$(t common.epel.amzn_unsupported)"; return 1; }
 
     log_step "$(t common.epel.enabling)"
     case "$OS_ID" in
@@ -361,9 +362,11 @@ is_musl() { compgen -G '/lib/ld-musl-*.so.1' >/dev/null; }
 
 # ── Network ───────────────────────────────────────────────────────────────────
 get_ipv4() {
+    # the last resort is the source address of the default route: iproute2
+    # prints "1.0.0.0 via GW dev IF src ADDR uid 0", so the field after "src"
     curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null \
         || curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null \
-        || ip -4 route get 1 2>/dev/null | awk '{print $NF; exit}'
+        || ip -4 route get 1 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }'
 }
 
 get_ipv6() {
@@ -402,30 +405,42 @@ _svc_enable_now() {
         return 1
     fi
 }
+# Neither systemd nor OpenRC (a container started without an init): said
+# once, plainly, instead of "rc-service: command not found" from every call.
+_svc_no_init() {
+    _uses_openrc && return 1
+    [[ -n "${_PSM_NO_INIT_SAID:-}" ]] || { log_error "$(t common.err.need_init "$1")"; _PSM_NO_INIT_SAID=1; }
+    return 0
+}
 svc_enable() {
     if _uses_systemd; then systemctl enable "$1" --quiet 2>/dev/null
+    elif _svc_no_init "$1"; then return 1
     else rc-update add "$1" default &>/dev/null; fi
 }
 svc_disable() {
     if _uses_systemd; then systemctl disable "$1" --quiet 2>/dev/null
+    elif _svc_no_init "$1"; then return 1
     else rc-update del "$1" default &>/dev/null; fi
 }
-svc_start()   { if _uses_systemd; then systemctl start   "$1"; else rc-service "$1" start;   fi; }
-svc_stop()    { if _uses_systemd; then systemctl stop    "$1"; else rc-service "$1" stop;    fi; }
+svc_start()   { if _uses_systemd; then systemctl start "$1"; elif _svc_no_init "$1"; then return 1; else rc-service "$1" start; fi; }
+svc_stop()    { if _uses_systemd; then systemctl stop  "$1"; elif _svc_no_init "$1"; then return 1; else rc-service "$1" stop;  fi; }
 # reset-failed first: every node change restarts the core, and systemd's default
 # start limit (5 starts / 10 s) otherwise locks the unit into "start-limit-hit"
 # after a handful of quick changes (measured with `psm node add` in a loop) —
 # every later change then fails although the config is valid.
 svc_restart() {
     if _uses_systemd; then systemctl reset-failed "$1" 2>/dev/null; systemctl restart "$1"
+    elif _svc_no_init "$1"; then return 1
     else rc-service "$1" restart; fi
 }
 svc_reload() {
     if _uses_systemd; then systemctl reload "$1" 2>/dev/null || systemctl restart "$1"
+    elif _svc_no_init "$1"; then return 1
     else rc-service "$1" reload 2>/dev/null || rc-service "$1" restart; fi
 }
 svc_status() {
     if _uses_systemd; then systemctl status "$1" --no-pager -l
+    elif _svc_no_init "$1"; then return 1
     else rc-service "$1" status; fi
 }
 svc_is_active() {
@@ -469,6 +484,12 @@ psm_write_openrc_service() {
     local name="$1" description="$2" command="$3" command_args="$4" env_file="${5:-}" env_line=""
     local run_as="${6:-}" pre_cmd="${7:-}" user_lines="command_user=\"root\"" log_line=""
     _uses_openrc || { log_error "$(t common.err.need_init "$name")"; return 1; }
+    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { log_error "psm_write_openrc_service: bad name: $name"; return 1; }
+    local v
+    for v in "$description" "$command" "$command_args" "$env_file" "$run_as"; do
+        [[ "$v" != *[\"\`\$\\]* && "$v" != *$'\n'* ]] \
+            || { log_error "psm_write_openrc_service: a value would break the script's quoting: $v"; return 1; }
+    done
     [[ -n "$env_file" ]] && env_line="[ -f \"${env_file}\" ] && { set -a; . \"${env_file}\"; set +a; }"
     if [[ -n "$run_as" ]]; then
         user_lines="command_user=\"${run_as}:${run_as}\""$'\n'"capabilities=\"^cap_net_bind_service,^cap_net_admin\""
@@ -543,6 +564,10 @@ svc_log_tail() {
 # entry point runs from an /etc/cron.d drop-in instead (see ensure_cron).
 psm_cron_set() {
     local name="$1" spec="$2" args="$3"
+    # the file name is ours to pick and the job is one line: nothing that could
+    # leave /etc/cron.d or start a second line
+    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { log_error "psm_cron_set: bad name: $name"; return 1; }
+    [[ "$spec$args" != *$'\n'* && "$spec$args" != *$'\r'* ]] || { log_error "psm_cron_set: a job is one line"; return 1; }
     ensure_cron || true
     mkdir -p /etc/cron.d
     cat > "/etc/cron.d/${name}" <<EOF
@@ -581,11 +606,11 @@ psm_iptables_persist() {
 ask() {
     # ask <var_name> <prompt> [default]
     local var="$1" prompt="$2" default="${3:-}"
-    local hint=""
+    local hint="" _ask_val=""
     [[ -n "$default" ]] && hint=" [${default}]"
-    read -rp "$(echo -e "${CYAN}${prompt}${hint}: ${NC}")" val
-    [[ -z "$val" && -n "$default" ]] && val="$default"
-    printf -v "$var" '%s' "$val"
+    read -rp "$(echo -e "${CYAN}${prompt}${hint}: ${NC}")" _ask_val || true
+    [[ -z "$_ask_val" && -n "$default" ]] && _ask_val="$default"
+    printf -v "$var" '%s' "$_ask_val"
 }
 
 # ask_hy2_obfs_pass <var_name> <prompt>
@@ -620,11 +645,11 @@ ask_hy2_bbr_profile() {
 
 ask_yn() {
     # ask_yn <prompt> [Y|N]  → returns 0=yes 1=no
-    local prompt="$1" default="${2:-Y}"
+    local prompt="$1" default="${2:-Y}" _ask_ans=""
     local hint; [[ "$default" == "Y" ]] && hint="[Y/n]" || hint="[y/N]"
-    read -rp "$(echo -e "${CYAN}${prompt} ${hint}: ${NC}")" ans
-    [[ -z "$ans" ]] && ans="$default"
-    case "$ans" in
+    read -rp "$(echo -e "${CYAN}${prompt} ${hint}: ${NC}")" _ask_ans || true
+    [[ -z "$_ask_ans" ]] && _ask_ans="$default"
+    case "$_ask_ans" in
         [Yy]) return 0 ;;
         *)    return 1 ;;
     esac
@@ -669,9 +694,10 @@ state_set() {
     # psm.state holds credentials (passwords, etc.); keep it and its dir root-only
     # instead of relying on the default umask (which leaves them world-readable).
     chmod 700 "$CFG_DIR" 2>/dev/null || true
-    local tmp; tmp=$(grep -v "^${key}=" "$PSM_STATE" 2>/dev/null || true)
-    ( umask 077; echo "$tmp" > "$PSM_STATE" )
-    echo "${key}=${val}" >> "$PSM_STATE"
+    local tmp
+    tmp=$(umask 077; mktemp "$PSM_STATE.XXXXXX") || return 1
+    { awk -v k="$key=" 'index($0, k) != 1' "$PSM_STATE" 2>/dev/null || true
+      printf '%s=%s\n' "$key" "$val"; } > "$tmp" && mv -f "$tmp" "$PSM_STATE" || { rm -f "$tmp"; return 1; }
     chmod 600 "$PSM_STATE" 2>/dev/null || true
 }
 
@@ -685,8 +711,8 @@ _er_route_final() {
 
 state_get() {
     local key="$1"
-    # grep returns 1 when key not found — suppress so set -e + pipefail don't kill the script
-    grep "^${key}=" "$PSM_STATE" 2>/dev/null | cut -d= -f2- || true
+    # the key as text, not as a pattern; nothing (and 0) when it is not set
+    awk -v k="$key=" 'index($0, k) == 1 { print substr($0, length(k) + 1) }' "$PSM_STATE" 2>/dev/null || true
 }
 
 # ── Random helpers ────────────────────────────────────────────────────────────
@@ -707,17 +733,17 @@ rand_str() {
     local len="${1:-16}"
     [[ "$len" =~ ^[0-9]+$ && "$len" -gt 0 ]] || len=16
 
+    local out=""
     if command -v openssl &>/dev/null; then
-        openssl rand -hex "$(((len + 1) / 2))" | cut -c1-"$len"
-        return 0
+        out=$(openssl rand -hex "$(((len + 1) / 2))" 2>/dev/null) || out=""
+        out=${out:0:len}
     fi
 
     # head exits after len bytes, which gives tr a SIGPIPE under pipefail.
     # The output is still correct, so suppress that expected non-zero status.
     # LC_ALL=C 不能省：UTF-8 locale 下 tr 读 /dev/urandom 会以
     # "Illegal byte sequence" 报错退出，结果是空串或一两个字符。
-    local out
-    out=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c "$len" || true)
+    (( ${#out} >= len )) || out=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c "$len" || true)
 
     # 最后一道兜底：本函数产出的是密码 / PSK / 伪装路径，长度不足绝不能悄悄放行。
     # 这条路径刻意不碰 tr（上面那条正是栽在 tr 上的），只用 od + bash 内建替换。
@@ -790,19 +816,29 @@ xray_test_restart() {
     # once a module that uses the fallback has loaded lib/nginx.sh.
     declare -F nginx_upgrade_http_camouflage >/dev/null && nginx_upgrade_http_camouflage
     psm_users_merge xray
-    local test_out
-    if test_out=$("$XRAY_BIN" run -test -config "$XRAY_CFG_DIR/config.json" 2>&1) \
-        || test_out=$("$XRAY_BIN" -test -config "$XRAY_CFG_DIR/config.json" 2>&1); then
-        svc_restart xray && {
+    # The last config that passed its test and started is kept beside it; one
+    # that fails either is replaced by it, and Xray started again — sing-box
+    # and mihomo roll back the same way (their .prev). Before, a change Xray
+    # refused stayed on disk, and the next restart of any kind took every node
+    # down with it.
+    local cfg="$XRAY_CFG_DIR/config.json" good="$XRAY_CFG_DIR/config.json.good" test_out
+    if test_out=$("$XRAY_BIN" run -test -config "$cfg" 2>&1) \
+        || test_out=$("$XRAY_BIN" -test -config "$cfg" 2>&1); then
+        if svc_restart xray; then
+            cp -p "$cfg" "$good" 2>/dev/null || true
             log_ok "$(t common.xray.restarted)"
             return 0
-        }
+        fi
         log_error "$(t common.xray.restart_fail)"
-        return 1
+    else
+        log_error "$(t common.xray.test_fail)"
+        echo "$test_out" >&2
     fi
-
-    log_error "$(t common.xray.test_fail)"
-    echo "$test_out" >&2
+    if [[ -f "$good" ]] && ! cmp -s "$good" "$cfg"; then
+        cat "$good" > "$cfg"
+        log_warn "$(t common.xray.rolled_back)"
+        svc_restart xray >/dev/null 2>&1 || true
+    fi
     return 1
 }
 
@@ -886,7 +922,9 @@ is_domain() {
 }
 
 is_ipv4() {
-    [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+    [[ "$1" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    local o
+    for o in "${BASH_REMATCH[@]:1}"; do (( 10#$o <= 255 )) || return 1; done
 }
 
 # ── Reality camouflage-target validation (shared by all cores) ────────────────
@@ -1015,12 +1053,19 @@ psm_pin_yaml() {
     return 0
 }
 
+# psm_tcp_listening <port>: something listens on that TCP port (read from
+# /proc, so it needs neither ss nor netstat).
+psm_tcp_listening() {
+    local hex; hex=$(printf '%04X' "$1")
+    awk -v p=":${hex}\$" '$4 == "0A" && toupper($2) ~ p { f = 1 } END { exit !f }' /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
 # Free TCP port on loopback for throwaway listeners (probes).
 _psm_free_port() {
     local p i
     for i in $(seq 1 50); do
         p=$(( RANDOM % 20000 + 40000 ))
-        ss -Hltn "sport = :$p" 2>/dev/null | grep -q . || { printf '%s' "$p"; return 0; }
+        psm_tcp_listening "$p" || { printf '%s' "$p"; return 0; }
     done
     return 1
 }
@@ -1058,7 +1103,7 @@ reality_probe_core() {
         rm -rf "$dir"; REALITY_PROBE_REASON="no_port"; return 2
     fi
     [[ "$sp" == "$cp" ]] && cp=$(( sp + 1 ))
-    uuid=$(uuid_gen)
+    uuid=$(uuid_gen) && [[ -n "$uuid" ]] || { rm -rf "$dir"; REALITY_PROBE_REASON="uuid_failed"; return 2; }
     case "$core" in
         xray) keys=$("$bin" x25519 2>/dev/null) ;;
         *)    keys=$("$bin" generate reality-keypair 2>/dev/null) ;;
@@ -1123,8 +1168,7 @@ reality_probe_core() {
     "$bin" "${sargs[@]}" >"$dir/s.log" 2>&1 & spid=$!
     "$bin" "${cargs[@]}" >"$dir/c.log" 2>&1 & cpid=$!
     for i in $(seq 1 25); do
-        ss -Hltn "sport = :$sp" 2>/dev/null | grep -q . \
-            && ss -Hltn "sport = :$cp" 2>/dev/null | grep -q . && break
+        psm_tcp_listening "$sp" && psm_tcp_listening "$cp" && break
         sleep 0.2
     done
     # One retry: a single slow response must not condemn a working target.
@@ -1133,8 +1177,8 @@ reality_probe_core() {
             -x "socks5h://127.0.0.1:$cp" "https://${sni}/" 2>/dev/null)
         [[ "$code" =~ ^[1-5][0-9][0-9]$ ]] && break
     done
-    kill "$spid" "$cpid" 2>/dev/null
-    wait "$spid" "$cpid" 2>/dev/null
+    kill "$spid" "$cpid" 2>/dev/null || true
+    wait "$spid" "$cpid" 2>/dev/null || true
     rm -rf "$dir"
     [[ "$code" =~ ^[1-5][0-9][0-9]$ ]] && return 0
     REALITY_PROBE_REASON="handshake_failed"
@@ -1147,7 +1191,7 @@ reality_probe_core() {
 reality_probe_step() {
     local rc
     log_step "$(t common.reality.probing_core "$1")"
-    reality_probe_core "$1" "$2" "$3"; rc=$?
+    rc=0; reality_probe_core "$1" "$2" "$3" || rc=$?
     (( rc == 1 )) || return 0
     REALITY_DEST_REASON="core_handshake"; RWD_CHECK_REASON="core_handshake"
     log_warn "$(t common.reality.core_probe_failed "$1" "$3")"
@@ -1300,7 +1344,7 @@ reality_dest_is_shared_frontend() {
             openssl s_client -connect "$connect" -servername "$probe" \
                 </dev/null >"$out" 2>&1
         fi
-        cert=$(mktemp)
+        cert=$(mktemp) || { rm -f "$out"; return 1; }
         awk '/-----BEGIN CERTIFICATE-----/{c=1} c{print} /-----END CERTIFICATE-----/{exit}' "$out" > "$cert"
         if grep -q "BEGIN CERTIFICATE" "$cert" \
             && openssl x509 -in "$cert" -noout -checkhost "$probe" >/dev/null 2>&1; then
@@ -1319,11 +1363,32 @@ jq_get() {
     jq -r "$2" "$1" 2>/dev/null
 }
 
+# psm_file_replace <file> <file with the new content>: the new content takes
+# the file's place atomically (a rename within its directory, never across
+# file systems from /tmp), keeping the file's mode and owner.
+psm_file_replace() {
+    local file="$1" new="$2" tmp
+    tmp=$(mktemp "${file}.XXXXXX") || return 1
+    cat "$new" > "$tmp" || { rm -f "$tmp"; return 1; }
+    if [[ -e "$file" ]]; then
+        chmod "$(stat -c %a "$file" 2>/dev/null || echo 600)" "$tmp" 2>/dev/null || true
+        chown "$(stat -c %u:%g "$file" 2>/dev/null || echo 0:0)" "$tmp" 2>/dev/null || true
+    fi
+    mv -f "$tmp" "$file"
+}
+
 jq_set() {
-    # jq_set <file> <jq_filter_with_value>
-    local file="$1" filter="$2"
-    local tmp; tmp=$(mktemp)
-    jq "$filter" "$file" > "$tmp" && mv "$tmp" "$file"
+    # jq_set <file> <jq_filter_with_value>: rewritten in place, atomically (the
+    # temp file is next to it), with the file's own mode and owner
+    local file="$1" filter="$2" tmp
+    tmp=$(mktemp "${file}.XXXXXX") || return 1
+    if jq "$filter" "$file" > "$tmp" && [[ -s "$tmp" ]]; then
+        chmod "$(stat -c %a "$file" 2>/dev/null || echo 600)" "$tmp" 2>/dev/null || true
+        chown "$(stat -c %u:%g "$file" 2>/dev/null || echo 0:0)" "$tmp" 2>/dev/null || true
+        mv -f "$tmp" "$file"
+    else
+        rm -f "$tmp"; return 1
+    fi
 }
 
 # ── Auto-backup wrapper ───────────────────────────────────────────────────────
@@ -1336,5 +1401,5 @@ with_backup() {
 }
 
 # ── i18n 初始化（放在文件末尾，state_get / 路径就绪之后）──────────────────────
-source "$LIB_DIR/i18n.sh"
+source "$LIB_DIR/i18n.sh" || { echo "PSM: cannot load $LIB_DIR/i18n.sh" >&2; exit 1; }
 i18n_init

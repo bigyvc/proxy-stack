@@ -37,6 +37,24 @@ _IPT=$(command -v iptables 2>/dev/null \
 unset _p
 
 # ── State helpers ─────────────────────────────────────────────────────────────
+# A temporary file for the state sits next to it: mv is then an atomic rename
+# (from /tmp it would be a copy across file systems).
+_trf_tmp() { mktemp "$TRAFFIC_STATE.XXXXXX"; }
+
+# One writer at a time: the periodic check (every minute) and a command
+# changing a limit both read, change and write the whole state; without the
+# lock one of the two changes was lost. Held until the process ends.
+_trf_lock() {
+    [[ -n "${_TRF_LOCKED:-}" ]] && return 0
+    mkdir -p "$TRAFFIC_DIR" 2>/dev/null || return 0
+    command -v flock &>/dev/null || return 0
+    # the braces: `exec {fd}>file 2>/dev/null` would send this shell's stderr
+    # to /dev/null for good, and every error after the lock with it
+    { exec {_TRF_LOCK_FD}>"$TRAFFIC_DIR/.lock"; } 2>/dev/null || return 0
+    flock -w 60 "$_TRF_LOCK_FD" 2>/dev/null || true
+    _TRF_LOCKED=1
+}
+
 _trf_init() {
     mkdir -p "$TRAFFIC_DIR"
     [[ -f "$TRAFFIC_STATE" ]] || echo '{}' > "$TRAFFIC_STATE"
@@ -64,7 +82,7 @@ _trf_count_port() {
 
 _trf_init_tag() {
     local tag="$1" port="$2"
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_trf_tmp)
     jq --arg t "$tag" --argjson p "$port" '
         if .[$t] == null then
             .[$t] = {
@@ -86,18 +104,20 @@ _trf_init_tag() {
 
 _trf_set_field() {
     local tag="$1" field="$2" val="$3"   # val must be valid JSON
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_trf_tmp)
     jq --arg t "$tag" --arg f "$field" --argjson v "$val" \
         '.[$t][$f] = $v' "$TRAFFIC_STATE" > "$tmp" && mv "$tmp" "$TRAFFIC_STATE"
 }
 
 _trf_set_str() {
-    local tag="$1" field="$2" val="$3"
-    _trf_set_field "$tag" "$field" "\"$val\""
+    local tag="$1" field="$2" val="$3" tmp
+    tmp=$(_trf_tmp) || return 1
+    jq --arg t "$tag" --arg f "$field" --arg v "$val" '.[$t][$f] = $v' "$TRAFFIC_STATE" > "$tmp" \
+        && mv "$tmp" "$TRAFFIC_STATE" || { rm -f "$tmp"; return 1; }
 }
 
 _trf_delete_tag() {
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_trf_tmp)
     jq --arg t "$1" 'del(.[$t])' "$TRAFFIC_STATE" > "$tmp" && mv "$tmp" "$TRAFFIC_STATE"
 }
 
@@ -157,7 +177,7 @@ _trf_enable_stats() {
         | .routing.rules = [
               {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
           ] + [.routing.rules[]? | select(.outboundTag != "api")]
-    ' "$XRAY_CFG" > "$tmp" && mv "$tmp" "$XRAY_CFG"
+    ' "$XRAY_CFG" > "$tmp" && psm_file_replace "$XRAY_CFG" "$tmp"; rm -f "$tmp"
 
     log_ok "$(t traffic.xray.api_enabled "$XRAY_API_PORT")"
     xray_test_restart
@@ -205,52 +225,47 @@ _trf_checkpoint_all() {
 
     local now; now=$(TZ="Asia/Hong_Kong" date '+%Y-%m-%dT%H:%M:%S')
 
-    while IFS= read -r tag; do
-        # limit 0 = no limit: counted only when enrolled to be metered (`psm traffic set`)
-        local limit; limit=$(_trf_get "$tag" "limit_bytes")
-        [[ "${limit:-0}" -le 0 && "$(_trf_get "$tag" "meter")" != "true" ]] && continue
+    # One read of the state (the tags counted: limit 0 = no limit, counted
+    # only when enrolled to be metered by `psm traffic set`), one listing of
+    # the chain for every iptables tag, one write — every minute, instead of
+    # half a dozen jq runs per tag.
+    local rows listing="" lines="" tag source cp acc cur delta
+    rows=$(jq -r 'to_entries[]
+        | select((((.value.limit_bytes // 0) | tonumber? // 0) > 0) or .value.meter == true)
+        | [.key, (.value.source // "xray"), ((.value.checkpoint_bytes // 0) | tostring),
+           ((.value.accumulated_bytes // 0) | tostring)] | @tsv' "$TRAFFIC_STATE" 2>/dev/null) || return 0
+    [[ -n "$rows" ]] || return 0
+    grep -q "$(printf '\tiptables\t')" <<<"$rows" && listing=$($_IPT -t mangle -nvxL "$IPT_CHAIN" 2>/dev/null || true)
 
-        local source; source=$(_trf_get "$tag" "source"); source="${source:-xray}"
-
-        local current_bytes=0
+    while IFS=$'\t' read -r tag source cp acc; do
+        [[ -n "$tag" ]] || continue
         case "$source" in
-            xray)
-                (( xray_ok )) && current_bytes=$(_trf_query_bytes "$tag") || continue
-                ;;
-            iptables)
-                current_bytes=$(_trf_ipt_query_bytes "$tag")
-                ;;
-            *)
-                continue
-                ;;
+            xray)     (( xray_ok )) || continue; cur=$(_trf_query_bytes "$tag") ;;
+            iptables) cur=$(_trf_ipt_sum "$tag" <<<"$listing") ;;
+            *) continue ;;
         esac
-
         # Sanitise all three values to plain integers before arithmetic —
         # state.json may contain floats written by a previous buggy awk run.
-        current_bytes=$(_trf_to_int "$current_bytes")
-        local checkpoint; checkpoint=$(_trf_to_int "$(_trf_get "$tag" "checkpoint_bytes")")
-        local accumulated; accumulated=$(_trf_to_int "$(_trf_get "$tag" "accumulated_bytes")")
-
-        local delta
-        if (( current_bytes >= checkpoint )); then
-            delta=$(( current_bytes - checkpoint ))
+        cur=$(_trf_to_int "$cur"); cp=$(_trf_to_int "$cp"); acc=$(_trf_to_int "$acc")
+        if (( cur >= cp )); then
+            delta=$(( cur - cp ))
         else
             # Counter was reset (Xray restart / iptables flush) — treat current as full delta
-            delta=$current_bytes
+            delta=$cur
         fi
+        lines+="${tag}"$'\t'"${cur}"$'\t'"$(( acc + delta ))"$'\n'
+    done <<<"$rows"
+    [[ -n "$lines" ]] || return 0
 
-        local new_acc=$(( accumulated + delta ))
-        local tmp; tmp=$(mktemp)
-        jq --arg t "$tag" \
-           --argjson cb "$current_bytes" \
-           --argjson acc "$new_acc" \
-           --arg now "$now" \
-           '.[$t].checkpoint_bytes = $cb
-            | .[$t].accumulated_bytes = $acc
-            | .[$t].last_check = $now' \
-           "$TRAFFIC_STATE" > "$tmp" && mv "$tmp" "$TRAFFIC_STATE"
-
-    done < <(_trf_get_tags)
+    local tmp; tmp=$(_trf_tmp) || return 0
+    if jq --arg now "$now" --argjson u "$(printf '%s' "$lines" | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t")
+            | {t: .[0], cb: (.[1] | tonumber), acc: (.[2] | tonumber)})')" '
+        reduce $u[] as $x (.; .[$x.t].checkpoint_bytes = $x.cb | .[$x.t].accumulated_bytes = $x.acc | .[$x.t].last_check = $now)
+        ' "$TRAFFIC_STATE" > "$tmp" && [[ -s "$tmp" ]]; then
+        mv "$tmp" "$TRAFFIC_STATE"
+    else
+        rm -f "$tmp"
+    fi
 }
 
 # ── Monthly reset ─────────────────────────────────────────────────────────────
@@ -279,7 +294,7 @@ _trf_check_monthly_reset() {
             iptables) cur_cb=$(_trf_ipt_query_bytes "$tag" 2>/dev/null || echo 0) ;;
         esac
         cur_cb=$(_trf_to_int "$cur_cb")
-        local tmp; tmp=$(mktemp)
+        local tmp; tmp=$(_trf_tmp)
         jq --arg t "$tag" --arg m "$current_month" --argjson cb "$cur_cb" '
             .[$t].accumulated_bytes  = 0
             | .[$t].checkpoint_bytes = $cb
@@ -350,7 +365,7 @@ _trf_xray_block_inbound() {
         # Prepend the blocking routing rule (high priority)
         | .routing.rules = [{"type": "field", "inboundTag": [$t], "outboundTag": "blocked"}]
             + (.routing.rules // [])
-    ' "$XRAY_CFG" > "$tmp" && mv "$tmp" "$XRAY_CFG"
+    ' "$XRAY_CFG" > "$tmp" && psm_file_replace "$XRAY_CFG" "$tmp"; rm -f "$tmp"
 
     # Kill existing connections on this inbound's port immediately, before Xray restarts.
     # This ensures the over-quota user is disconnected right away rather than waiting
@@ -378,7 +393,7 @@ _trf_xray_unblock_inbound() {
             (.outboundTag == "blocked" and
              ((.inboundTag // []) | index($t)) != null) | not
         )]
-    ' "$XRAY_CFG" > "$tmp" && mv "$tmp" "$XRAY_CFG"
+    ' "$XRAY_CFG" > "$tmp" && psm_file_replace "$XRAY_CFG" "$tmp"; rm -f "$tmp"
 
     xray_test_restart 2>/dev/null || true
 }
@@ -473,18 +488,17 @@ _trf_ipt_remove_rules() {
     done
 }
 
+# Bytes of one tag's accounting rules in a listing of the chain. The tag is
+# matched as text: as a pattern, a "." or "*" in it matched other tags' rules.
+_trf_ipt_sum() {   # <tag>, the listing on stdin
+    awk -v t="$1" '
+        index($0, "psm-in-" t " ") || index($0, "psm-out-" t " ") { total += $2 }
+        END { printf "%.0f\n", total + 0 }'
+}
+
 _trf_ipt_query_bytes() {
     # Sum bytes from all accounting rules matching this tag (mangle table).
-    local tag="$1"
-    $_IPT -t mangle -nvxL "$IPT_CHAIN" 2>/dev/null | \
-        awk -v t="$tag" '
-            /psm-in-/ || /psm-out-/ {
-                if ($0 ~ ("psm-in-"t" ") || $0 ~ ("psm-out-"t" ")) {
-                    total += $2
-                }
-            }
-            END { printf "%.0f\n", total+0 }
-        '
+    $_IPT -t mangle -nvxL "$IPT_CHAIN" 2>/dev/null | _trf_ipt_sum "$1"
 }
 
 _trf_ipt_restore_all() {
@@ -518,7 +532,7 @@ _trf_pause_tag() {
             ;;
     esac
 
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_trf_tmp)
     jq --arg t "$tag" --arg ts "$ts" \
         '.[$t].paused = true | .[$t].paused_at = $ts' \
         "$TRAFFIC_STATE" > "$tmp" && mv "$tmp" "$TRAFFIC_STATE"
@@ -548,7 +562,7 @@ _trf_resume_tag() {
             ;;
     esac
 
-    local tmp; tmp=$(mktemp)
+    local tmp; tmp=$(_trf_tmp)
     jq --arg t "$tag" \
         '.[$t].paused = false | .[$t].paused_at = null' \
         "$TRAFFIC_STATE" > "$tmp" && mv "$tmp" "$TRAFFIC_STATE"
@@ -572,7 +586,7 @@ _trf_enforce() {
            && [[ "$(_trf_get "$tag" "warned90")" != "true" ]] \
            && [[ "$paused" != "true" ]]; then
             tg_notify_traffic_warn "$port" "$accumulated" "$limit" 2>/dev/null || true
-            local _tmp; _tmp=$(mktemp)
+            local _tmp; _tmp=$(_trf_tmp)
             jq --arg t "$tag" '.[$t].warned90 = true' \
                 "$TRAFFIC_STATE" > "$_tmp" && mv "$_tmp" "$TRAFFIC_STATE"
         fi
@@ -606,6 +620,7 @@ _trf_enforce() {
 
 # ── Main periodic check (invoked by systemd timer) ────────────────────────────
 traffic_check() {
+    _trf_lock
     _trf_init
     _trf_ipt_restore_all    # re-establish accounting rules lost after reboot
     _trf_check_monthly_reset
@@ -613,6 +628,11 @@ traffic_check() {
     _trf_enforce
     # Expiry enforcement (non-fatal if module not loaded)
     declare -f expiry_check &>/dev/null && expiry_check || true
+    # Relays past their --expires (psm relay): their quota is enforced above,
+    # as relay-<TAG>; the expiry is theirs to check
+    if grep -qE '"expires_at": *"[0-9]' "$CFG_DIR/realm/rules.json" 2>/dev/null; then
+        { source "$LIB_DIR/relay_cli.sh" && relay_limits_check; } || true
+    fi
     # Accounts (lib/users.sh): expiry, Xray per-user quota, monthly rollover
     if [[ -f "$CFG_DIR/users.json" ]]; then
         { source "$LIB_DIR/users.sh" && users_check; } || true
@@ -1018,9 +1038,13 @@ _trf_add_wizard() {
             ask exp_months "$(t traffic.ask_expiry_months)" "1"
             if [[ "$exp_months" =~ ^[0-9]+$ ]] && (( exp_months > 0 )); then
                 local exp_date; exp_date=$(TZ="Asia/Hong_Kong" \
-                    date -d "now +${exp_months} months" '+%Y-%m-%d 23:59:59')
-                exp_set "$tag" "$port" "$exp_date"
-                log_ok "$(t traffic.expiry_set "$exp_date")"
+                    date -d "now +${exp_months} months" '+%Y-%m-%d 23:59:59' 2>/dev/null || true)
+                if [[ -n "$exp_date" ]]; then
+                    exp_set "$tag" "$port" "$exp_date"
+                    log_ok "$(t traffic.expiry_set "$exp_date")"
+                else
+                    log_error "$(t traffic.expiry_unparsed)"
+                fi
             fi
         fi
     fi
@@ -1099,7 +1123,7 @@ _trf_reset_stats() {
                 iptables) cur_cb=$(_trf_ipt_query_bytes "$t" 2>/dev/null || echo 0) ;;
             esac
             cur_cb=$(_trf_to_int "$cur_cb")
-            local tmp; tmp=$(mktemp)
+            local tmp; tmp=$(_trf_tmp)
             jq --arg t "$t" --argjson cb "$cur_cb" '
                 .[$t].accumulated_bytes  = 0
                 | .[$t].checkpoint_bytes = $cb
@@ -1127,7 +1151,7 @@ _trf_reset_stats() {
             iptables) cur_cb=$(_trf_ipt_query_bytes "$tag" 2>/dev/null || echo 0) ;;
         esac
         cur_cb=$(_trf_to_int "$cur_cb")
-        local tmp; tmp=$(mktemp)
+        local tmp; tmp=$(_trf_tmp)
         jq --arg t "$tag" --argjson cb "$cur_cb" '
             .[$t].accumulated_bytes  = 0
             | .[$t].checkpoint_bytes = $cb

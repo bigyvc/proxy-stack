@@ -71,6 +71,16 @@ _remove_psm_iptables() {
 }
 
 # ── Optional component removal ────────────────────────────────────────────────
+# psm-agent (a server in a PSM panel): without PSM it would go on syncing with
+# the panel and fail every task, so it goes first — asked, default yes.
+if source "$LIB_DIR/agent.sh" 2>/dev/null && { [[ -x "$PSM_AGENT_BIN" ]] || [[ -f "$PSM_AGENT_CFG" ]]; }; then
+    agent_panel=$(jq -r '.panel // ""' "$PSM_AGENT_CFG" 2>/dev/null || true)
+    ask_yn "$(t uninstall.ask_agent "${agent_panel:-?}")" Y && {
+        _agent_remove --yes >/dev/null 2>&1 || true
+        log_ok "$(t uninstall.agent_removed)"
+    }
+fi
+
 ask_yn "$(t uninstall.ask_nginx)" N && {
     _svc_stop_disable nginx
     detect_os
@@ -155,6 +165,18 @@ ask_yn "$(t uninstall.ask_realm)" N && {
     svc_daemon_reload
     log_ok "$(t uninstall.realm_removed)"
 }
+
+# gost (psm relay --engine gost), asked about only when it is there
+if [[ -e /usr/local/bin/psm-gost || -d /etc/psm-gost ]]; then
+    ask_yn "$(t uninstall.ask_gost)" N && {
+        _svc_stop_disable psm-gost
+        rm -f /usr/local/bin/psm-gost /etc/systemd/system/psm-gost.service
+        psm_remove_openrc_service psm-gost
+        rm -rf /etc/psm-gost
+        svc_daemon_reload
+        log_ok "$(t uninstall.gost_removed)"
+    }
+fi
 
 ask_yn "$(t uninstall.ask_docker)" N && {
     _compose_down_all
@@ -252,6 +274,14 @@ systemctl daemon-reload 2>/dev/null || true
 
 psm_root_removed=0
 if ask_yn "$(t uninstall.ask_progdir "$PSM_ROOT")" Y; then
+    # the backups live inside the program directory: keep them, unless asked not to
+    if [[ -d "$BAK_DIR" && -n "$(ls -A "$BAK_DIR" 2>/dev/null)" ]]; then
+        kept_bak="/root/psm-backup-$(date +%Y%m%d-%H%M%S)"
+        if ask_yn "$(t uninstall.ask_keep_backups "$BAK_DIR" "$kept_bak")" Y && mv "$BAK_DIR" "$kept_bak"; then
+            chmod 700 "$kept_bak" 2>/dev/null || true
+            log_ok "$(t uninstall.backups_kept "$kept_bak")"
+        fi
+    fi
     rm -rf "$PSM_ROOT"
     psm_root_removed=1
 else

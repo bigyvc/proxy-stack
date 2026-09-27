@@ -1,6 +1,6 @@
 # migrate.sh — 한국어
 MSG[migrate.usage]="사용법:
-  psm migrate export [--output 파일] [--encrypt]    이 서버를 묶기: 노드, 키, 인증서, Nginx, acme.sh
+  psm migrate export [--output 파일] [--no-encrypt] 이 서버를 묶기: 노드, 키, 인증서, Nginx, acme.sh (기본적으로 암호로 암호화)
   psm migrate import 파일 [--yes] [--force]         묶은 서버를 이 호스트에 재구성
   psm migrate push [사용자@]호스트 [--port N] [--identity 키] [--force]
                                                     내보낸 뒤 SSH로 PSM과 번들을 복사하고 그쪽에서 가져오기"
@@ -10,7 +10,7 @@ MSG[migrate.pack_failed]="번들을 쓸 수 없습니다."
 MSG[migrate.exported]="번들 생성: %s (%s, 노드 %s 개)."
 MSG[migrate.secret_warn]="이 서버의 모든 개인 키와 비밀번호가 들어 있습니다: SSH로만 옮기고, 가져온 뒤에는 삭제하세요."
 MSG[migrate.next_steps]="새 서버에서: psm migrate import %s   (또는 여기서 한 번에: psm migrate push root@새서버)"
-MSG[migrate.need_pass]="암호가 필요합니다: PSM_MIGRATE_PASS 를 설정하거나 터미널에서 실행하세요."
+MSG[migrate.need_pass]="암호가 필요합니다: PSM_MIGRATE_PASS 를 설정하거나 터미널에서 실행하세요 (암호화하지 않으려면 --no-encrypt)."
 MSG[migrate.ask_pass]="번들 암호:"
 MSG[migrate.ask_pass2]="암호 다시 입력:"
 MSG[migrate.pass_mismatch]="암호가 비어 있거나 두 입력이 다릅니다."
@@ -50,3 +50,4 @@ MSG[migrate.push.failed]="%s 에서 가져오기 실패 (출력은 위에). 번�
 MSG[migrate.menu.export]="다른 서버로 옮기기 위해 내보내기"
 MSG[migrate.menu.import]="마이그레이션 번들 가져오기"
 MSG[migrate.ask_file]="번들 경로:"
+MSG[migrate.ask_encrypt]="이 번들에는 이 서버의 모든 개인 키와 비밀번호가 들어 있습니다. 암호로 암호화할까요?"

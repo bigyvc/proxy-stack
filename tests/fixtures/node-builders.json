@@ -826,5 +826,186 @@
     "domain": "",
     "vless_decryption": "mlkem768x25519plus.native.600s.-Ml20GaEPBtF8DcrC2-UN1uhUTooSNoaXiS90RvsrlA",
     "vless_encryption": "mlkem768x25519plus.native.0rtt.1eqI8XtD9jbAMeXDA8R8KhnofJhvtcJedDz7gUiu1Dk"
-  }
+  },
+  "relay_rules": [
+    {
+      "tag": "r-realm",
+      "engine": "realm",
+      "mode": "forward",
+      "listen_port": 20001,
+      "remote_host": "10.0.0.2",
+      "remote_port": 443,
+      "targets": [
+        {
+          "host": "10.0.0.2",
+          "port": 443
+        },
+        {
+          "host": "2001:db8::3",
+          "port": 443
+        }
+      ],
+      "strategy": "hash",
+      "udp": true,
+      "tls": false
+    },
+    {
+      "tag": "r-legacy",
+      "listen_port": 20002,
+      "remote_host": "10.0.0.9",
+      "remote_port": 8443,
+      "udp": false,
+      "tls": true,
+      "tls_sni": "relay.example.com",
+      "tls_cert": "",
+      "tls_key": "",
+      "tls_insecure": true
+    },
+    {
+      "tag": "g-lb",
+      "engine": "gost",
+      "mode": "forward",
+      "listen_port": 20003,
+      "remote_host": "10.0.0.2",
+      "remote_port": 443,
+      "targets": [
+        {
+          "host": "10.0.0.2",
+          "port": 443
+        },
+        {
+          "host": "10.0.0.3",
+          "port": 443
+        }
+      ],
+      "strategy": "round",
+      "udp": false,
+      "speed_mbps": 0
+    },
+    {
+      "tag": "g-fo",
+      "engine": "gost",
+      "mode": "forward",
+      "listen_port": 20004,
+      "remote_host": "10.0.0.2",
+      "remote_port": 8388,
+      "targets": [
+        {
+          "host": "10.0.0.2",
+          "port": 8388
+        },
+        {
+          "host": "2001:db8::3",
+          "port": 8388
+        }
+      ],
+      "strategy": "fifo",
+      "probe": false,
+      "udp": true,
+      "speed_mbps": 20
+    },
+    {
+      "tag": "g-one",
+      "engine": "gost",
+      "mode": "forward",
+      "listen_port": 20005,
+      "remote_host": "lan.example.com",
+      "remote_port": 22,
+      "targets": [
+        {
+          "host": "lan.example.com",
+          "port": 22
+        }
+      ],
+      "udp": false,
+      "speed_mbps": 0.5
+    },
+    {
+      "tag": "t-out",
+      "engine": "gost",
+      "mode": "tunnel-exit",
+      "listen_port": 28443,
+      "remote_host": "127.0.0.1",
+      "remote_port": 443,
+      "targets": [
+        {
+          "host": "127.0.0.1",
+          "port": 443
+        },
+        {
+          "host": "10.0.0.3",
+          "port": 443
+        }
+      ],
+      "strategy": "fifo",
+      "transport": "wss",
+      "ws_path": "/cdn",
+      "tls_sni": "www.example.com",
+      "tls_cert": "/opt/psm/config/realm/certs/tunnel-t-out.crt",
+      "tls_key": "/opt/psm/config/realm/certs/tunnel-t-out.key",
+      "secret": "0123456789abcdef0123456789abcdef",
+      "udp": true
+    },
+    {
+      "tag": "t-in",
+      "engine": "gost",
+      "mode": "tunnel-entry",
+      "listen_port": 20443,
+      "remote_host": "203.0.113.5",
+      "remote_port": 28443,
+      "targets": [
+        {
+          "host": "203.0.113.5",
+          "port": 28443
+        }
+      ],
+      "transport": "mwss",
+      "ws_host": "cdn.example.com",
+      "ws_path": "/cdn",
+      "tls_sni": "www.example.com",
+      "exit_ca": "/opt/psm/config/realm/pins/t-in.crt",
+      "exit_pin": "5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+      "secret": "0123456789abcdef0123456789abcdef",
+      "udp": true,
+      "speed_mbps": 100
+    },
+    {
+      "tag": "t-in2",
+      "engine": "gost",
+      "mode": "tunnel-entry",
+      "listen_port": 20444,
+      "remote_host": "exit.example.com",
+      "remote_port": 8443,
+      "targets": [
+        {
+          "host": "exit.example.com",
+          "port": 8443
+        }
+      ],
+      "transport": "tls",
+      "tls_insecure": true,
+      "exit_ca": "",
+      "secret": "fedcba9876543210",
+      "udp": false
+    },
+    {
+      "tag": "t-in3",
+      "engine": "gost",
+      "mode": "tunnel-entry",
+      "listen_port": 20445,
+      "remote_host": "2001:db8::7",
+      "remote_port": 8443,
+      "targets": [
+        {
+          "host": "2001:db8::7",
+          "port": 8443
+        }
+      ],
+      "transport": "mtls",
+      "tls_sni": "exit.example.org",
+      "exit_ca": "",
+      "secret": "fedcba9876543210",
+      "udp": true
+    }
+  ]
 }

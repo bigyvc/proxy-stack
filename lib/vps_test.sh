@@ -83,7 +83,9 @@ _vps_ping_one() {
     fi
 
     out=$(ping -c 4 -W 2 "$target" 2>/dev/null || true)
-    avg=$(printf '%s\n' "$out" | awk -F'/' '/min\/avg\/max|round-trip/ {print $5; exit}')
+    # the second figure after "=": iputils prints "rtt min/avg/max/mdev = a/b/c/d ms",
+    # busybox "round-trip min/avg/max = a/b/c ms" (splitting on "/" alone took max there)
+    avg=$(printf '%s\n' "$out" | awk '/min\/avg\/max/ { split($0, a, "="); split(a[2], v, "/"); gsub(/[^0-9.]/, "", v[2]); print v[2]; exit }')
     if [[ -n "$avg" ]]; then
         printf "  %-20s %s ms\n" "$target" "$avg"
     else
@@ -105,6 +107,8 @@ vps_test_trace_route() {
     local target
     ask target "$(t vps_test.trace.ask_target)" "1.1.1.1"
     [[ -n "$target" ]] || { log_info "$(t common.cancelled)"; return 0; }
+    # a host name or an address: "-…" would be read as an option of the tool
+    [[ "$target" =~ ^[A-Za-z0-9][A-Za-z0-9.:-]*$ ]] || { log_error "$(t vps_test.trace.bad_target "$target")"; return 1; }
 
     if command -v nexttrace &>/dev/null; then
         nexttrace "$target" || true

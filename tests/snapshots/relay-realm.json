@@ -1,0 +1,20 @@
+[
+  "",
+  "[network]",
+  "no_tcp = false",
+  "use_udp = false",
+  "",
+  "[[endpoints]]",
+  "listen = \"0.0.0.0:20001\"",
+  "remote = \"10.0.0.2:443\"",
+  "extra_remotes = [\"[2001:db8::3]:443\"]",
+  "balance = \"iphash: 1, 1\"",
+  "[endpoints.network]",
+  "use_udp = true",
+  "",
+  "[[endpoints]]",
+  "listen = \"0.0.0.0:20002\"",
+  "remote = \"10.0.0.9:8443\"",
+  "remote_transport = \"tls;sni=relay.example.com;insecure\"",
+  ""
+]

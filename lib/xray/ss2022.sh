@@ -25,20 +25,20 @@ _xss_list() {
 _xss_count() { _xss_load | jq 'length' 2>/dev/null; }
 
 _xss_get_by_tag() {
-    _xss_load | jq ".[] | select(.tag == \"$1\")" 2>/dev/null
+    _xss_load | jq --arg t "$1" '.[] | select(.tag == $t)' 2>/dev/null
 }
 
 _xss_upsert() {
     local node_json="$1"
     local tag; tag=$(echo "$node_json" | jq -r '.tag')
     local nodes; nodes=$(_xss_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$tag\")) | . += [$node_json]")
+    nodes=$(echo "$nodes" | jq --arg t "$tag" --argjson n "$node_json" 'del(.[] | select(.tag == $t)) | . += [$n]')
     _xss_save "$nodes"
 }
 
 _xss_delete() {
     local nodes; nodes=$(_xss_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$1\"))")
+    nodes=$(echo "$nodes" | jq --arg t "$1" 'del(.[] | select(.tag == $t))')
     _xss_save "$nodes"
 }
 

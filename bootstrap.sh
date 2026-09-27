@@ -167,13 +167,14 @@ _psm_slim() {   # <repo dir>
 # opens no port: it connects out to the panel.
 _psm_join_panel() {
     log_step "$(bt "正在接入面板 ${PSM_PANEL} ..." "Connecting to the panel at ${PSM_PANEL} ...")"
-    bash "$PSM_DIR/manager.sh" agent join --panel "$PSM_PANEL" --token "$PSM_JOIN"
+    # the token in the environment, not on psm's command line (ps shows those)
+    PSM_AGENT_TOKEN="$PSM_JOIN" bash "$PSM_DIR/manager.sh" agent join --panel "$PSM_PANEL"
 }
 
 # ── Clone or update ───────────────────────────────────────────────────────────
 if [[ -d "$PSM_DIR/.git" ]]; then
     log_step "$(bt "正在更新已安装的 PSM（${PSM_DIR}）..." "Updating existing PSM installation at ${PSM_DIR} ...")"
-    # 仓库里只有脚本，用户数据在 /etc/psm。手动改过的脚本会让 git pull 拒绝合并、
+    # 用户数据（config/、backup/、logs/）不受 git 管理（.gitignore）。手动改过的脚本会让 git pull 拒绝合并、
     # 整次更新直接中止 —— 先把改动存成补丁（不丢），再还原到 HEAD。未跟踪文件不动。
     # 安装/更新都会 chmod +x 脚本，仓库里记为 100644 的文件因此显示为"已修改"，
     # 上游一改到它们 pull 就失败。权限不算本地修改：关掉 core.fileMode。
@@ -193,7 +194,7 @@ if [[ -d "$PSM_DIR/.git" ]]; then
         git -C "$PSM_DIR" fetch origin "$PSM_BRANCH"
         git -C "$PSM_DIR" reset -q --hard FETCH_HEAD
     fi
-    chmod +x "$PSM_DIR"/*.sh "$PSM_DIR/lib"/*.sh 2>/dev/null || true
+    find "$PSM_DIR" -name '*.sh' -not -path '*/.git/*' -exec chmod +x {} + 2>/dev/null || true
     log_ok "$(bt "PSM 已更新。" "PSM updated.")"
 
     psm_cmd_target="$(readlink -f /usr/local/bin/psm 2>/dev/null || true)"
@@ -215,7 +216,13 @@ fi
 
 log_step "$(bt "正在克隆 PSM 到 $PSM_DIR ..." "Cloning PSM to $PSM_DIR ...")"
 git clone --depth=1 --filter=blob:none --no-checkout -b "$PSM_BRANCH" "$PSM_REPO" "$PSM_DIR"
-_psm_slim "$PSM_DIR"
+# the slim checkout is what writes the files here: when it fails, a plain
+# checkout does it instead (an old git without sparse checkout, say)
+_psm_slim "$PSM_DIR" || {
+    log_warn "$(bt "精简检出失败，改为完整检出。" "Could not slim the checkout; checking out in full.")"
+    git -C "$PSM_DIR" config core.sparseCheckout false 2>/dev/null || true
+    git -C "$PSM_DIR" checkout -q -f "$PSM_BRANCH" || true
+}
 [[ -f "$PSM_DIR/install.sh" ]] || die "$(bt "检出失败：$PSM_DIR 中没有 install.sh。" "Checkout failed: no install.sh in $PSM_DIR.")"
 log_ok "$(bt "仓库已下载。" "Repository downloaded.")"
 

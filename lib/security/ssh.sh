@@ -86,7 +86,12 @@ _ssh_backup() {
 }
 
 _ssh_test_config() { sshd -t 2>&1; }
-_ssh_reload()      { svc_reload "$(_ssh_svc_name)"; }
+# A reload only, never a restart: a reload keeps the sessions (this one
+# included), a restart may end them, and svc_reload falls back to one.
+_ssh_reload() {
+    local svc; svc=$(_ssh_svc_name)
+    if _uses_systemd; then systemctl reload "$svc"; else rc-service "$svc" reload; fi
+}
 
 # ── Effective (live, parsed) config readers — via `sshd -T`, not raw grep ────
 _ssh_get() { sshd -T 2>/dev/null | awk -v k="$1" '$1==k{print $2}'; }
@@ -126,8 +131,9 @@ _ssh_schedule_rollback() {
     " >/dev/null 2>&1 &
     disown
     jq -n --arg pid "$!" --arg backup "$backup" --arg reason "$reason" \
-          --arg at "$(date '+%Y-%m-%d %H:%M:%S')" \
-        '{pid:$pid, backup:$backup, reason:$reason, scheduled_at:$at, delay:'"$SSH_ROLLBACK_DELAY"'}' \
+          --arg at "$(date '+%Y-%m-%d %H:%M:%S')" --argjson epoch "$(date +%s)" --arg old "${_SSH_OLD_PORTS:-}" \
+        '{pid:$pid, backup:$backup, reason:$reason, scheduled_at:$at, scheduled_epoch:$epoch, old_ports:$old,
+          delay:'"$SSH_ROLLBACK_DELAY"'}' \
         > "$SSH_ROLLBACK_STATE"
 }
 
@@ -136,18 +142,30 @@ _ssh_confirm_hardening() {
         log_warn "$(t security.ssh.no_pending)"
         return 0
     fi
-    local pid; pid=$(jq -r '.pid' "$SSH_ROLLBACK_STATE" 2>/dev/null)
+    local pid old; pid=$(jq -r '.pid' "$SSH_ROLLBACK_STATE" 2>/dev/null)
+    old=$(jq -r '.old_ports // ""' "$SSH_ROLLBACK_STATE" 2>/dev/null)
     rm -f "$SSH_ROLLBACK_STATE"
     [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
     log_ok "$(t security.ssh.confirmed)"
+    # a port change that is confirmed works: the old port need not stay open
+    if [[ -n "$old" ]]; then
+        source "$LIB_DIR/system.sh" 2>/dev/null || true
+        local p
+        for p in ${old//,/ }; do
+            [[ "$p" =~ ^[0-9]+$ ]] || continue
+            ask_yn "$(t security.ssh.ask_close_old_port "$p")" Y && firewall_close_port "$p" tcp
+        done
+    fi
 }
 
 _ssh_pending_rollback_info() {
     [[ -f "$SSH_ROLLBACK_STATE" ]] || return 1
     local scheduled_at delay elapsed remaining
-    scheduled_at=$(jq -r '.scheduled_at' "$SSH_ROLLBACK_STATE")
+    # the epoch, written since; a state from before has only the date text
+    scheduled_at=$(jq -r '.scheduled_epoch // empty' "$SSH_ROLLBACK_STATE")
+    [[ "$scheduled_at" =~ ^[0-9]+$ ]] || scheduled_at=$(date -d "$(jq -r '.scheduled_at' "$SSH_ROLLBACK_STATE")" +%s 2>/dev/null || date +%s)
     delay=$(jq -r '.delay' "$SSH_ROLLBACK_STATE")
-    elapsed=$(( $(date +%s) - $(date -d "$scheduled_at" +%s 2>/dev/null || echo 0) ))
+    elapsed=$(( $(date +%s) - scheduled_at ))
     remaining=$(( delay - elapsed ))
     (( remaining < 0 )) && remaining=0
     printf '%s' "$remaining"
@@ -158,13 +176,21 @@ _ssh_pending_rollback_info() {
 _ssh_apply_and_protect() {
     local backup="$1" reason="$2"
     local test_out
+    # the safety net writes its state with jq: without it there would be no
+    # rollback to fall back on, so nothing changes
+    command -v jq &>/dev/null || { log_error "$(t security.ssh.need_jq)"; cp -a "$backup" "$SSHD_CFG"; return 1; }
     if ! test_out=$(_ssh_test_config); then
         log_error "$(t security.ssh.config_test_fail)"
         echo "$test_out"
         cp -a "$backup" "$SSHD_CFG"
         return 1
     fi
-    _ssh_reload
+    if ! _ssh_reload; then
+        log_error "$(t security.ssh.reload_fail)"
+        cp -a "$backup" "$SSHD_CFG"
+        _ssh_reload >/dev/null 2>&1 || true
+        return 1
+    fi
     _ssh_schedule_rollback "$backup" "$reason"
     log_warn "$(t security.ssh.change_active_warn "$((SSH_ROLLBACK_DELAY / 60))")"
     log_warn "$(t security.ssh.keep_session_warn)"
@@ -242,7 +268,7 @@ ssh_change_port() {
 
     _ssh_set_ports "$new_port"
 
-    _ssh_apply_and_protect "$backup" "$(t security.ssh.reason_change_port "$new_port")"
+    _SSH_OLD_PORTS="${cur:-22}" _ssh_apply_and_protect "$backup" "$(t security.ssh.reason_change_port "$new_port")"
 }
 
 # ── One-click wizard (key + disable password only; port change is separate) ──

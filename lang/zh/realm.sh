@@ -34,6 +34,7 @@ MSG[realm.port_listening_warn]="端口 %s 当前已被本机某服务监听，�
 MSG[realm.port_reserved_warn]="端口 %s 似乎已被本机服务、防火墙已放行端口或已配置的节点/蜜罐占用。"
 MSG[realm.ask.delete_tag]="要删除的规则标识"
 MSG[realm.rule_not_found]="未找到规则：%s"
+MSG[realm.gost_rule]="%s 是 gost 中转（负载均衡、隧道或限速），请用 psm relay 命令或面板修改"
 MSG[realm.ask.delete_rule]="确认删除规则 '%s'（本机端口 %s）？"
 MSG[realm.rule_deleted]="规则 '%s' 已删除。原监听端口 %s 若已放行防火墙，不再使用时请手动关闭。"
 MSG[realm.ask.modify_tag]="要修改的规则标识"

@@ -24,20 +24,20 @@ _outb_list() {
 _outb_count() { _outb_load | jq 'length' 2>/dev/null; }
 
 _outb_get_by_tag() {
-    _outb_load | jq ".[] | select(.tag == \"$1\")" 2>/dev/null
+    _outb_load | jq --arg t "$1" '.[] | select(.tag == $t)' 2>/dev/null
 }
 
 _outb_upsert() {
     local entry="$1"
     local tag; tag=$(echo "$entry" | jq -r '.tag')
     local nodes; nodes=$(_outb_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$tag\")) | . += [$entry]")
+    nodes=$(echo "$nodes" | jq --arg t "$tag" --argjson n "$entry" 'del(.[] | select(.tag == $t)) | . += [$n]')
     _outb_save "$nodes"
 }
 
 _outb_delete() {
     local nodes; nodes=$(_outb_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$1\"))")
+    nodes=$(echo "$nodes" | jq --arg t "$1" 'del(.[] | select(.tag == $t))')
     _outb_save "$nodes"
 }
 

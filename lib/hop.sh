@@ -77,15 +77,18 @@ _hop_ipt() {   # _hop_ipt <iptables|ip6tables> args...
     "$@" 2>/dev/null
 }
 
-# Remove every psm-hop rule from both families.
+# Remove every psm-hop rule from both families: by its number in the chain,
+# the last first so the numbers above stay put. A rule's text is never run as
+# a command — its comment carries the node's tag, and a tag is what the user
+# typed (a "$(…)" in it would have run as root when the text was eval'ed).
 _hop_flush() {
-    local t rule
+    local t n
     for t in iptables ip6tables; do
         command -v "$t" &>/dev/null || continue
-        while IFS= read -r rule; do
-            [[ -n "$rule" ]] || continue
-            eval "$t -t nat ${rule/-A PREROUTING/-D PREROUTING}" 2>/dev/null || true
-        done < <("$t" -t nat -S PREROUTING 2>/dev/null | grep -- '--comment "\?psm-hop:')
+        while read -r n; do
+            [[ "$n" =~ ^[0-9]+$ ]] && "$t" -t nat -D PREROUTING "$n" 2>/dev/null || true
+        done < <("$t" -t nat -L PREROUTING -n --line-numbers 2>/dev/null \
+                 | awk '$1 ~ /^[0-9]+$/ && index($0, "/* psm-hop:") { print $1 }' | sort -rn)
     done
 }
 

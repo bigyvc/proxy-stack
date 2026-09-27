@@ -15,7 +15,7 @@
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-PSM_AGENT_VERSION="0.10.1"
+PSM_AGENT_VERSION="0.11.0"
 PSM_AGENT_BIN="/usr/local/bin/psm-agent"
 PSM_AGENT_CFG="/etc/psm/agent.json"
 PSM_AGENT_SERVICE="psm-agent"
@@ -91,7 +91,9 @@ EOF
 }
 
 _agent_join() {
-    local panel="" token="" allow_http="${PSM_AGENT_ALLOW_HTTP:-}" have i
+    # the token may come in the environment (bootstrap passes it that way): a
+    # command line is there for every local user to read in ps
+    local panel="" token="${PSM_AGENT_TOKEN:-}" allow_http="${PSM_AGENT_ALLOW_HTTP:-}" have i
     while (( $# )); do
         case "$1" in
             --panel) panel="${2:-}"; shift 2 ;;
@@ -110,9 +112,9 @@ _agent_join() {
         log_step "psm-agent ${PSM_AGENT_VERSION}"
         _agent_download || return 1
     fi
-    local -a args=(join -panel "$panel" -token "$token" -config "$PSM_AGENT_CFG")
+    local -a args=(join -panel "$panel" -config "$PSM_AGENT_CFG")
     [[ -z "$allow_http" ]] || args+=(-allow-http)
-    if ! "$PSM_AGENT_BIN" "${args[@]}"; then
+    if ! PSM_AGENT_TOKEN="$token" "$PSM_AGENT_BIN" "${args[@]}"; then
         _agent_err 'the panel did not accept the join token (used already, older than 24 h, or mistyped?): make a new install command in the panel'
         return 1
     fi

@@ -91,3 +91,4 @@ MSG[traffic.menu.expiry_sep]="-- Управление сроком действ�
 MSG[traffic.menu.expiry_status]="Показать статус срока действия узлов"
 MSG[traffic.menu.expiry_set]="Задать/продлить срок действия узла"
 MSG[traffic.expiry_module_not_loaded]="Модуль срока действия не загружен"
+MSG[traffic.expiry_unparsed]="Не удалось вычислить дату окончания (date не понимает относительные даты?); срок не задан"

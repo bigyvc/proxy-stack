@@ -54,12 +54,36 @@ EOF
 }
 
 # ── Store ─────────────────────────────────────────────────────────────────────
-_users_load() { [[ -f "$USERS_FILE" ]] && jq -c '.' "$USERS_FILE" 2>/dev/null || echo '{"users":[]}'; }
+# A store that no longer parses (a power cut, a full disk) must never read as
+# "no users": the periodic check would write that back over it, and every
+# core restart would take the accounts out of the configs. So a load fails
+# instead — falling back to the copy of the last good store kept beside it —
+# and a save writes only a store that is one, atomically, next to the file.
+_USERS_OK='type == "object" and ((.users // []) | type) == "array"'
+_users_load() {
+    [[ -f "$USERS_FILE" ]] || { echo '{"users":[]}'; return 0; }
+    local j
+    if j=$(jq -ce "if $_USERS_OK then . else error(\"not a store\") end" "$USERS_FILE" 2>/dev/null); then
+        printf '%s\n' "$j"; return 0
+    fi
+    if [[ -f "$USERS_FILE.prev" ]] && j=$(jq -ce "if $_USERS_OK then . else error(\"not a store\") end" "$USERS_FILE.prev" 2>/dev/null); then
+        _users_err "$USERS_FILE does not parse: using the last good copy, $USERS_FILE.prev"
+        printf '%s\n' "$j"; return 0
+    fi
+    _users_err "$USERS_FILE does not parse and there is no good copy of it; fix or remove it (nothing was changed)"
+    return 1
+}
 _users_save() {
     mkdir -p "$(dirname "$USERS_FILE")"
-    local tmp; tmp=$(mktemp)
-    printf '%s' "$1" | jq '.' > "$tmp" && [[ -s "$tmp" ]] || { rm -f "$tmp"; return 1; }
-    chmod 600 "$tmp"; mv -f "$tmp" "$USERS_FILE"
+    local tmp; tmp=$(mktemp "$USERS_FILE.XXXXXX") || return 1
+    if printf '%s' "$1" | jq -e "$_USERS_OK" >/dev/null 2>&1 && printf '%s' "$1" | jq '.' > "$tmp" && [[ -s "$tmp" ]]; then
+        chmod 600 "$tmp"
+        # the store being replaced, while it is a good one, is the fallback
+        jq -e "$_USERS_OK" "$USERS_FILE" >/dev/null 2>&1 && cp -p "$USERS_FILE" "$USERS_FILE.prev"
+        mv -f "$tmp" "$USERS_FILE"
+    else
+        rm -f "$tmp"; return 1
+    fi
 }
 _users_get() { _users_load | jq -c --arg n "$1" '.users[]? | select(.name == $n)'; }
 
@@ -86,11 +110,12 @@ _users_nodes_arg() {   # all | TAG,TAG → JSON array
 # Users that go into the cores right now.
 _users_active_json() {
     [[ -f "$USERS_FILE" ]] || { echo '[]'; return 0; }
+    local u; u=$(_users_load) || return 1
     jq -c --argjson now "$(date +%s)" '[.users[]?
         | select(.enabled != false)
         | select(.expires_at == null or .expires_at > $now)
         | select(.quota_bytes == null or (.used_bytes // 0) < .quota_bytes)
-        | {name, uuid, password, nodes: (.nodes // ["*"])}]' "$USERS_FILE"
+        | {name, uuid, password, nodes: (.nodes // ["*"])}]' <<<"$u"
 }
 
 _users_state() {   # user JSON → active / disabled / expired / over_quota
@@ -198,7 +223,9 @@ psm_users_inject() {
     # nothing to add and nothing of ours to remove
     [[ -f "$USERS_FILE" ]] || grep -q "$USERS_PREFIX" "$cfg" 2>/dev/null || return 0
     local users owners tmp
-    users=$(_users_active_json) || users='[]'
+    # accounts that cannot be read are left in the config as they are, not
+    # taken out of it
+    users=$(_users_active_json) || { _users_err "the accounts in $core's config are left as they are"; return 0; }
     owners=$(_users_owner_map)
     tmp=$(mktemp)
     if jq --argjson users "$users" --argjson owners "$owners" "$_USERS_JQ_DEFS $filter" "$cfg" > "$tmp" 2>/dev/null \
@@ -222,7 +249,7 @@ _users_core_installed() {
 # then bring the per-user subscriptions up to date.
 users_apply() {
     local core rc=0 u
-    u=$(_users_load)
+    u=$(_users_load) || return 1
     # Xray counts each account from the start (a quota set later must see the
     # traffic before it); expiry and quotas need the periodic check
     if jq -e '(.users // []) | length > 0' <<<"$u" >/dev/null 2>&1 && _users_core_installed xray; then
@@ -289,8 +316,9 @@ users_check() {
     [[ -f "$USERS_FILE" ]] || return 0
     local month st
     month=$(date +%Y-%m)
-    st=$(_users_load | jq -c --arg m "$month" '.users |= map(
-        if (.used_month // "") != $m then .used_bytes = 0 | .used_month = $m else . end)')
+    local cur; cur=$(_users_load) || return 0
+    st=$(jq -c --arg m "$month" '.users |= map(
+        if (.used_month // "") != $m then .used_bytes = 0 | .used_month = $m else . end)' <<<"$cur")
     if _users_core_installed xray; then
         local q
         q=$( source "$LIB_DIR/traffic.sh" 2>/dev/null
@@ -343,7 +371,8 @@ _users_cmd_add() {
             --days)    [[ "${2:-}" =~ ^[0-9]+$ && "$2" -gt 0 ]] || { _users_err "--days needs a positive number"; return 2; }
                        exp=$(( $(date +%s) + $2 * 86400 )); shift 2; continue ;;
             --expires) v=$(_users_date "${2:-}") || { _users_err "--expires needs YYYY-MM-DD"; return 2; }; exp="$v"; shift 2; continue ;;
-            --quota)   v=$(_users_size "${2:-}") || { _users_err "--quota needs a size such as 50G"; return 2; }; quota="$v"; shift 2; continue ;;
+            --quota)   v=$(_users_size "${2:-}") || { _users_err "--quota needs a size such as 50G"; return 2; }
+                       (( v > 0 )) && quota="$v" || quota="null"; shift 2; continue ;;
             --json) json=1 ;;
             *) _users_err "unknown option: $1"; return 2 ;;
         esac
@@ -376,7 +405,8 @@ _users_cmd_update() {
                            f+=" | .expires_at = $(( $(date +%s) + $2 * 86400 ))"; shift 2; continue ;;
             --expires)     v=$(_users_date "${2:-}") || { _users_err "--expires needs YYYY-MM-DD"; return 2; }; f+=" | .expires_at = $v"; shift 2; continue ;;
             --no-expiry)   f+=' | .expires_at = null' ;;
-            --quota)       v=$(_users_size "${2:-}") || { _users_err "--quota needs a size such as 50G"; return 2; }; f+=" | .quota_bytes = $v"; shift 2; continue ;;
+            --quota)       v=$(_users_size "${2:-}") || { _users_err "--quota needs a size such as 50G"; return 2; }
+                           if (( v > 0 )); then f+=" | .quota_bytes = $v"; else f+=' | .quota_bytes = null'; fi; shift 2; continue ;;
             --no-quota)    f+=' | .quota_bytes = null' ;;
             --reset-usage) f+=' | .used_bytes = 0' ;;
             --enable)      f+=' | .enabled = true' ;;
@@ -478,9 +508,9 @@ psm_users_cli() {
         update) require_root; _users_cmd_update "$@" ;;
         delete|remove|rm) require_root; _users_cmd_delete "$@" ;;
         token)  require_root; _users_cmd_token "$@" ;;
-        list)   _users_cmd_list "$@" ;;
-        show)   _users_cmd_show "$@" ;;
-        links)  _users_cmd_links "$@" ;;
+        list)   require_root; _users_cmd_list "$@" ;;
+        show)   require_root; _users_cmd_show "$@" ;;
+        links)  require_root; _users_cmd_links "$@" ;;
         help|--help|-h) _users_usage ;;
         *) _users_usage >&2; return 2 ;;
     esac

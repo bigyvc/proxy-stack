@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,7 +43,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.10.1"
+const agentVersion = "0.11.0"
 
 const (
 	commandTimeout  = 120 * time.Second // one psm command
@@ -74,18 +75,48 @@ var standalones = map[string]bool{"snell": true, "ss2022": true}
 // the cyberspace-mapping engines psm sni find knows
 var sniEngines = map[string]bool{"netlas": true, "quake": true, "zoomeye": true, "fofa": true}
 
+// a sni.check task's candidates: at most this many, each named by a DNS name
+const sniMaxPairs = 60
+
+var sniNameRe = regexp.MustCompile(`^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z][A-Za-z0-9-]{0,62}$`)
+
 var ssMethods = map[string]bool{
 	"2022-blake3-aes-128-gcm": true, "2022-blake3-aes-256-gcm": true, "2022-blake3-chacha20-poly1305": true,
 }
 
 var snellVersions = map[string]bool{"4": true, "5": true, "6": true}
 
+// What a relay may be (psm relay): its engine, its mode, the tunnel's
+// transport and how several targets share the work. "" is the default.
+var (
+	relayEngines    = map[string]bool{"": true, "realm": true, "gost": true}
+	relayModes      = map[string]bool{"": true, "forward": true, "tunnel-entry": true, "tunnel-exit": true}
+	relayTransports = map[string]bool{"": true, "tls": true, "mtls": true, "wss": true, "mwss": true}
+	relayStrategies = map[string]bool{"": true, "round": true, "rand": true, "fifo": true, "hash": true}
+)
+
+const (
+	maxRelayTargets = 16
+	maxRelayCert    = 8 << 10 // the exit's certificate, PEM
+	maxRelaySpeed   = 100000  // Mbit/s
+)
+
 var (
 	// a tag never starts with "-": psm would read "--show-secrets" as an option
 	tagRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$`)
 	hostRe = regexp.MustCompile(`^([A-Za-z0-9-]{1,63}\.)*[A-Za-z0-9-]{1,63}$|^[0-9a-fA-F:.]+$`)
-	pskRe  = regexp.MustCompile(`^[A-Za-z0-9+/=_][A-Za-z0-9+/=_-]{7,127}$`)
-	keyRe  = regexp.MustCompile(`^[A-Za-z0-9+/]{16,86}={0,2}$`)
+	// a relay's hosts: DNS labels do not start or end with "-" (nor would a
+	// host psm or realm should ever see: "--help" passes hostRe)
+	relayHostRe = regexp.MustCompile(`^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$|^[0-9a-fA-F:.]+$`)
+	pskRe       = regexp.MustCompile(`^[A-Za-z0-9+/=_][A-Za-z0-9+/=_-]{7,127}$`)
+	keyRe       = regexp.MustCompile(`^[A-Za-z0-9+/]{16,86}={0,2}$`)
+	// a relay tunnel's password, the WebSocket path, the exit's certificate hash,
+	// an expiry (UTC) and a port range for --listen-port auto
+	secretRe  = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
+	wsPathRe  = regexp.MustCompile(`^/[A-Za-z0-9._~/%-]{0,127}$`)
+	pinRe     = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+	expiresRe = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`)
+	rangeRe   = regexp.MustCompile(`^([0-9]{1,5})-([0-9]{1,5})$`)
 )
 
 // ── config ────────────────────────────────────────────────────────────────────
@@ -304,6 +335,30 @@ type leavePlan struct {
 	Relays []string `json:"relays"`
 }
 
+// sniCheckInput is what `psm sni check --input -` reads: the candidates a
+// sni.check task names, each a host name and a host:port (psm checks again).
+func sniCheckInput(data json.RawMessage) ([]byte, string) {
+	var q struct {
+		Pairs []struct {
+			SNI  string `json:"sni"`
+			Dest string `json:"dest"`
+		} `json:"pairs"`
+	}
+	if err := json.Unmarshal(data, &q); err != nil || len(q.Pairs) == 0 || len(q.Pairs) > sniMaxPairs {
+		return nil, fmt.Sprintf("sni.check needs 1-%d candidates", sniMaxPairs)
+	}
+	for _, p := range q.Pairs {
+		host, port, err := net.SplitHostPort(p.Dest)
+		n, _ := strconv.Atoi(port)
+		if !sniNameRe.MatchString(p.SNI) || len(p.SNI) > 253 || err != nil || n < 1 || n > 65535 ||
+			!relayHostRe.MatchString(host) || len(host) > 253 {
+			return nil, "sni.check: not a host name and a host:port: " + p.SNI + " " + p.Dest
+		}
+	}
+	in, _ := json.Marshal(q)
+	return in, ""
+}
+
 func rejected(t task, why string) result {
 	return result{TaskID: t.ID, Error: "rejected by psm-agent: " + why}
 }
@@ -326,6 +381,11 @@ func checkNode(t task, withTag bool) string {
 // so checkNode does not apply to it: what has to hold is the tag and the hop
 // itself. The panel always sends a relay's whole desired state, for a change
 // as much as for a new one, so both ports and the far host must be there.
+//
+// Every other field psm relay reads is checked for what it may be, and a
+// field it does not know is refused: psm keeps what it is given in its rule
+// store, so nothing the panel sends may name a file on this server (the
+// certificate paths of a tunnel's exit and entry are psm's own to choose).
 func checkRelay(t task) string {
 	if !tagRe.MatchString(t.Tag) {
 		return "bad tag " + t.Tag
@@ -341,8 +401,96 @@ func checkRelay(t task) string {
 		return "bad remote port"
 	}
 	host, _ := obj["remote_host"].(string)
-	if host == "" || !hostRe.MatchString(host) {
+	if host == "" || len(host) > 253 || !relayHostRe.MatchString(host) {
 		return "bad remote host " + host
+	}
+	for k, v := range obj {
+		if why := checkRelayField(k, v); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
+func checkRelayField(k string, v any) string {
+	str := func(ok func(string) bool) string {
+		s, isStr := v.(string)
+		if !isStr || !ok(s) {
+			return fmt.Sprintf("bad relay %s", k)
+		}
+		return ""
+	}
+	oneOf := func(m map[string]bool) string { return str(func(s string) bool { return m[s] }) }
+	optHost := func(s string) bool { return s == "" || (len(s) <= 253 && relayHostRe.MatchString(s)) }
+	switch k {
+	case "tag", "listen_port", "remote_port", "remote_host":
+		return "" // checked above
+	case "udp", "tls", "tls_insecure", "probe", "listen_port_auto":
+		if _, ok := v.(bool); !ok {
+			return "bad relay " + k
+		}
+	case "engine":
+		return oneOf(relayEngines)
+	case "mode":
+		return oneOf(relayModes)
+	case "transport":
+		return oneOf(relayTransports)
+	case "strategy":
+		return oneOf(relayStrategies)
+	case "tls_sni", "ws_host":
+		return str(optHost)
+	case "ws_path":
+		return str(func(s string) bool { return s == "" || wsPathRe.MatchString(s) })
+	case "secret":
+		return str(func(s string) bool { return s == "" || secretRe.MatchString(s) })
+	case "exit_pin":
+		return str(func(s string) bool { return s == "" || pinRe.MatchString(s) })
+	case "exit_cert_pem":
+		return str(func(s string) bool {
+			return s == "" || (len(s) <= maxRelayCert && strings.HasPrefix(s, "-----BEGIN CERTIFICATE-----") &&
+				!strings.ContainsAny(s, "\x00"))
+		})
+	case "expires_at":
+		return str(func(s string) bool { return s == "" || expiresRe.MatchString(s) })
+	case "port_range":
+		return str(func(s string) bool {
+			m := rangeRe.FindStringSubmatch(s)
+			if m == nil {
+				return false
+			}
+			lo, _ := strconv.Atoi(m[1])
+			hi, _ := strconv.Atoi(m[2])
+			return lo >= 1 && hi <= 65535 && lo <= hi
+		})
+	case "speed_mbps":
+		if f, ok := v.(float64); !ok || f < 0 || f > maxRelaySpeed {
+			return "bad relay speed_mbps"
+		}
+	case "limit_bytes":
+		if f, ok := v.(float64); !ok || f < 0 || f > maxLimitBytes || f != float64(int64(f)) {
+			return "bad relay limit_bytes"
+		}
+	case "reset_day":
+		if f, ok := v.(float64); !ok || f < 0 || f > 28 || f != float64(int(f)) {
+			return "bad relay reset_day"
+		}
+	case "targets":
+		list, ok := v.([]any)
+		if !ok || len(list) == 0 || len(list) > maxRelayTargets {
+			return "bad relay targets"
+		}
+		for _, e := range list {
+			o, ok := e.(map[string]any)
+			if !ok || len(o) != 2 {
+				return "bad relay target"
+			}
+			h, _ := o["host"].(string)
+			if _, ok := goodPort(o["port"]); !ok || h == "" || len(h) > 253 || !relayHostRe.MatchString(h) {
+				return "bad relay target"
+			}
+		}
+	default:
+		return "unknown relay field " + k
 	}
 	return ""
 }
@@ -611,6 +759,18 @@ func (a *agent) execute(ctx context.Context, t task) result {
 			return rejected(t, "sni.find needs the engine's API key")
 		}
 		out, err := a.psmFor(ctx, sniTimeout, []byte(q.Key+"\n"), "sni", "find", "--engine", q.Engine, "--key-stdin", "--json")
+		if err != nil {
+			return fail(err)
+		}
+		r.OK, r.Output = true, jsonOrNil(out)
+	case "sni.check":
+		// The same, with the search done by the panel (the engine's key stays
+		// there): only the TLS check of what it found runs here.
+		in, why := sniCheckInput(t.Data)
+		if why != "" {
+			return rejected(t, why)
+		}
+		out, err := a.psmFor(ctx, sniTimeout, in, "sni", "check", "--input", "-", "--json")
 		if err != nil {
 			return fail(err)
 		}
@@ -939,11 +1099,16 @@ func main() {
 		fs := flag.NewFlagSet("join", flag.ExitOnError)
 		cfgPath := fs.String("config", defaultConfig, "config file to write")
 		panel := fs.String("panel", "", "the panel's address, https://…")
-		token := fs.String("token", "", "the one-time join token from the install command")
+		token := fs.String("token", "", "the one-time join token from the install command (or PSM_AGENT_TOKEN)")
 		allowHTTP := fs.Bool("allow-http", false, "accept an http:// panel (local testing only)")
 		_ = fs.Parse(os.Args[2:])
+		// from the environment, psm agent join passes it: a command line is
+		// there for every local user to read in ps
+		if *token == "" {
+			*token = os.Getenv("PSM_AGENT_TOKEN")
+		}
 		if *panel == "" || *token == "" {
-			log.Fatal("psm-agent join: -panel and -token are required")
+			log.Fatal("psm-agent join: -panel and -token (or PSM_AGENT_TOKEN) are required")
 		}
 		if err := join(ctx, *cfgPath, *panel, *token, *allowHTTP); err != nil {
 			log.Fatalf("psm-agent join: %v", err)

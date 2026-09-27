@@ -34,6 +34,7 @@ MSG[realm.port_listening_warn]="Порт %s сейчас прослушивае�
 MSG[realm.port_reserved_warn]="Порт %s, похоже, используется локальной службой, разрешенным портом firewall, настроенным узлом или honeypot."
 MSG[realm.ask.delete_tag]="Тег правила для удаления"
 MSG[realm.rule_not_found]="Правило не найдено: %s"
+MSG[realm.gost_rule]="%s — ретранслятор gost (балансировка, туннель или ограничение скорости); меняйте его через psm relay или панель"
 MSG[realm.ask.delete_rule]="Удалить правило '%s' (локальный порт %s)?"
 MSG[realm.rule_deleted]="Правило '%s' удалено. Если старый порт прослушивания %s был открыт в firewall, закройте его вручную, когда он больше не нужен."
 MSG[realm.ask.modify_tag]="Тег правила для изменения"

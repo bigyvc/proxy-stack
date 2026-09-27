@@ -16,20 +16,32 @@ REALM_RELEASES="https://github.com/zhboner/realm/releases"
 REALM_FALLBACK_TAG="v2.9.4"
 
 # ── Rule store（JSON 为唯一事实源，config.toml 由它生成）─────────────────────
+# The store holds the relays of both engines (psm relay --engine realm|gost):
+# a rule without "engine" is realm's, as every rule written before gost was.
+# The menu below manages realm's; gost's (lib/gost.sh) are psm relay's alone.
+# A tunnel rule carries its password, so the file is root's only.
 _realm_load() {
     if [[ ! -f "$REALM_STORE" ]]; then
         mkdir -p "$(dirname "$REALM_STORE")"
         echo "[]" > "$REALM_STORE"
+        chmod 600 "$REALM_STORE" 2>/dev/null || true
     fi
     cat "$REALM_STORE"
 }
-_realm_save() { mkdir -p "$(dirname "$REALM_STORE")"; printf '%s\n' "$1" > "$REALM_STORE"; }
-_realm_count() { _realm_load | jq 'length' 2>/dev/null; }
+_realm_save() {
+    mkdir -p "$(dirname "$REALM_STORE")"
+    printf '%s\n' "$1" > "$REALM_STORE"
+    chmod 600 "$REALM_STORE" 2>/dev/null || true
+}
+_REALM_ONLY='[.[] | select((.engine // "realm") == "realm")]'
+_realm_count() { _realm_load | jq "$_REALM_ONLY | length" 2>/dev/null; }
 _realm_get_by_tag() { _realm_load | jq --arg t "$1" '.[] | select(.tag == $t)' 2>/dev/null; }
 _realm_list() {
-    _realm_load | jq -r '.[] |
+    _realm_load | jq -r "$_REALM_ONLY"'[] |
         "\(.tag)\t\(.listen_port)\t\(.remote_host)\t\(.remote_port)\t\(if .udp then "TCP+UDP" else "TCP" end)"' 2>/dev/null
 }
+# A gost rule named in the menu: the menu writes realm rules only.
+_realm_is_gost() { [[ "$(printf '%s' "$1" | jq -r '.engine // "realm"' 2>/dev/null)" == gost ]]; }
 _realm_upsert() {
     local n="$1" tag; tag=$(echo "$n" | jq -r '.tag')
     local rules; rules=$(_realm_load)
@@ -53,7 +65,7 @@ _realm_fmt_remote() {
 
 # ── 由 JSON 存储生成 realm 的 TOML 配置 ───────────────────────────────────────
 _realm_gen_toml() {
-    local rules; rules=$(_realm_load)
+    local rules; rules=$(_realm_load | jq "$_REALM_ONLY")
     local count; count=$(echo "$rules" | jq 'length')
     mkdir -p "$REALM_CFG_DIR"
 
@@ -77,6 +89,21 @@ _realm_gen_toml() {
             echo "[[endpoints]]"
             echo "listen = \"0.0.0.0:${listen}\""
             echo "remote = \"${remote}\""
+            # More than one target (psm relay --target, several times): realm
+            # takes the first as remote and the rest as extra_remotes, and
+            # spreads connections over them by round robin, or by client IP.
+            # It checks no target's health: that is what gost is for.
+            local extra n
+            n=$(echo "$rule" | jq '(.targets // []) | length')
+            if (( n > 1 )); then
+                extra=$(echo "$rule" | jq -r '.targets[1:][] | "\(.host)\t\(.port)"' | while IFS=$'\t' read -r h p; do
+                    printf '"%s", ' "$(_realm_fmt_remote "$h" "$p")"; done)
+                echo "extra_remotes = [${extra%, }]"
+                local algo=roundrobin weights
+                [[ "$(echo "$rule" | jq -r '.strategy // ""')" == hash ]] && algo=iphash
+                weights=$(printf '1, %.0s' $(seq 1 "$n")); weights=${weights%, }
+                echo "balance = \"${algo}: ${weights}\""
+            fi
             # The hop's own encryption (psm relay --tls). realm wraps the
             # forwarded stream in TLS: the side that forwards to this machine
             # terminates it (it holds the certificate), any other side dials it.
@@ -324,6 +351,7 @@ realm_delete_rule() {
     local tag; ask tag "$(t realm.ask.delete_tag)"
     local rule; rule=$(_realm_get_by_tag "$tag")
     [[ -z "$rule" ]] && { log_error "$(t realm.rule_not_found "$tag")"; return 1; }
+    _realm_is_gost "$rule" && { log_error "$(t realm.gost_rule "$tag")"; return 1; }
     local lp; lp=$(echo "$rule" | jq -r '.listen_port')
     ask_yn "$(t realm.ask.delete_rule "$tag" "$lp")" N || return 0
     _realm_delete "$tag"
@@ -339,6 +367,7 @@ realm_modify_rule() {
     local tag; ask tag "$(t realm.ask.modify_tag)"
     local rule; rule=$(_realm_get_by_tag "$tag")
     [[ -z "$rule" ]] && { log_error "$(t realm.rule_not_found "$tag")"; return 1; }
+    _realm_is_gost "$rule" && { log_error "$(t realm.gost_rule "$tag")"; return 1; }
 
     local old_lp old_rh old_rp old_udp
     old_lp=$(echo "$rule"  | jq -r '.listen_port')
@@ -369,7 +398,8 @@ realm_modify_rule() {
     rule=$(echo "$rule" | jq \
         --argjson lp "$listen_port" --arg rh "$remote_host" \
         --argjson rp "$remote_port" --argjson udp "$udp" \
-        '.listen_port=$lp | .remote_host=$rh | .remote_port=$rp | .udp=$udp')
+        '.listen_port=$lp | .remote_host=$rh | .remote_port=$rp | .udp=$udp
+         | if ((.targets // []) | length) > 0 then .targets = ([{host: $rh, port: $rp}] + .targets[1:]) else . end')
     _realm_upsert "$rule"
     _realm_apply || return 1
     log_ok "$(t realm.rule_updated "$tag" "$listen_port" "$remote_host" "$remote_port")"

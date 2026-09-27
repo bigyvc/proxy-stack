@@ -27,3 +27,4 @@ MSG[expiry.invalid_months]="Количество месяцев должно б�
 MSG[expiry.renewed]="Узел %s продлен до: %s (время Гонконга)"
 MSG[expiry.ask_date]="Дата истечения (YYYY-MM-DD или YYYY-MM-DD HH:MM:SS, время Гонконга)"
 MSG[expiry.set_done]="Срок действия узла %s установлен на: %s (время Гонконга)"
+MSG[expiry.unparsed]="Срок %s не читается (%s) и пропущен; задайте его заново"

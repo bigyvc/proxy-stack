@@ -219,58 +219,28 @@ _reality_build_inbound() {
     # 客户端。留空 = 不写这个字段 = 沿用内核默认（老内核本就没有该默认值，行为不变）。
     # 只有用户显式设过才写出来，避免给稳定版配置塞一个它不需要的字段。
     local min_client_ver; min_client_ver=$(echo "$node_json" | jq -r '.min_client_ver // ""')
-    local min_client_ver_line=""
-    [[ -n "$min_client_ver" ]] && min_client_ver_line="
-      \"minClientVer\": \"$min_client_ver\","
 
     # 回落限速：仅在 dest 被判定为共享 CDN 前端时写出（见 common.sh 的取值权衡）。
     # 只影响「认证未通过」的回落连接，已认证客户端的代理流量不受任何影响。
-    local limit_fallback; limit_fallback=$(echo "$node_json" | jq -r '.limit_fallback // false')
-    local limit_fallback_line=""
-    if [[ "$limit_fallback" == "true" ]]; then
-        limit_fallback_line="
-      \"limitFallbackUpload\": {
-        \"afterBytes\": $REALITY_FALLBACK_AFTER_BYTES,
-        \"bytesPerSec\": $REALITY_FALLBACK_BYTES_PER_SEC,
-        \"burstBytesPerSec\": $REALITY_FALLBACK_BURST_BYTES_PER_SEC
-      },
-      \"limitFallbackDownload\": {
-        \"afterBytes\": $REALITY_FALLBACK_AFTER_BYTES,
-        \"bytesPerSec\": $REALITY_FALLBACK_BYTES_PER_SEC,
-        \"burstBytesPerSec\": $REALITY_FALLBACK_BURST_BYTES_PER_SEC
-      },"
-    fi
+    local limit_fallback; limit_fallback=$(echo "$node_json" | jq -r 'if .limit_fallback == true then true else false end')
 
-    cat <<EOF
-{
-  "tag": "$tag",
-  "listen": "$listen_addr",
-  "port": $port,
-  "protocol": "vless",
-  "settings": {
-    "clients": [
-      { "id": "$uuid", "flow": "$flow" }
-    ],
-    "decryption": "$decryption"
-  },
-  "streamSettings": {
-    "network": "tcp",
-    "security": "reality",
-    "realitySettings": {
-      "show": false,
-      "dest": "$dest",
-      "xver": 0,
-      "serverNames": $server_names_json,$min_client_ver_line$limit_fallback_line
-      "privateKey": "$priv_key",
-      "shortIds": $short_ids
-    }
-  },
-  "sniffing": {
-    "enabled": true,
-    "destOverride": ["http", "tls", "quic"]
-  }
-}
-EOF
+    # jq writes it: a tag, a path or a key with a quote or a backslash in it is
+    # a string like any other, not the end of one
+    jq -n --arg tag "$tag" --arg listen "$listen_addr" --argjson port "$port" \
+        --arg uuid "$uuid" --arg flow "$flow" --arg dec "$decryption" --arg dest "$dest" \
+        --argjson names "$server_names_json" --arg mcv "$min_client_ver" --argjson lf "$limit_fallback" \
+        --arg pk "$priv_key" --argjson sids "$short_ids" \
+        --argjson after "$REALITY_FALLBACK_AFTER_BYTES" --argjson bps "$REALITY_FALLBACK_BYTES_PER_SEC" \
+        --argjson burst "$REALITY_FALLBACK_BURST_BYTES_PER_SEC" '
+        {afterBytes: $after, bytesPerSec: $bps, burstBytesPerSec: $burst} as $lim
+        | {tag: $tag, listen: $listen, port: $port, protocol: "vless",
+           settings: {clients: [{id: $uuid, flow: $flow}], decryption: $dec},
+           streamSettings: {network: "tcp", security: "reality",
+             realitySettings: ({show: false, dest: $dest, xver: 0, serverNames: $names}
+               + (if $mcv != "" then {minClientVer: $mcv} else {} end)
+               + (if $lf then {limitFallbackUpload: $lim, limitFallbackDownload: $lim} else {} end)
+               + {privateKey: $pk, shortIds: $sids})},
+           sniffing: {enabled: true, destOverride: ["http", "tls", "quic"]}}'
 }
 
 # ── Apply all Reality nodes to Xray config ────────────────────────────────────
@@ -492,6 +462,8 @@ reality_add_node() {
             log_info "$(t xray.reality.sni_reuse_info)"
         else
             ask port "$(t xray.reality.ask_local_xray_port)" "$((1443 + count))"
+            # a port, or the store would be written with no port at all
+            [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) || { log_error "$(t common.err.invalid_port)"; return 1; }
             _xray_check_port_conflict "$port" || { log_info "$(t common.cancelled)"; return 1; }
         fi
         public_port=443
@@ -502,6 +474,7 @@ reality_add_node() {
         # give a safe port or explicitly confirm the risky one.
         while true; do
             ask port "$(t xray.reality.ask_listen_port)" "$(_reality_suggest_direct_port)"
+            [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) || { log_error "$(t common.err.invalid_port)"; continue; }
             if _reality_port_is_risky "$port"; then
                 if [[ "$port" == "445" ]]; then
                     log_warn "$(t xray.reality.port_445_warn)"

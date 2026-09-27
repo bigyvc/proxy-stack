@@ -9,7 +9,13 @@ _cert_key_perms() {
     if id -u psm-core &>/dev/null && chgrp psm-core "$1" 2>/dev/null; then chmod 640 "$1"; else chmod 600 "$1"; fi
 }
 
-ACME_INSTALL_URL="https://get.acme.sh"
+# acme.sh itself: a release pinned by the SHA-256 of its tarball, checked
+# before a line of it runs (as root). The usual `curl https://get.acme.sh | sh`
+# runs whatever that address serves at the time. To move to a newer release,
+# change both lines (sha256sum of the tag's .tar.gz from GitHub).
+ACME_VERSION="3.1.6"
+ACME_TARBALL_SHA256="0d3f9000ac44a6331314742a88c475f79134e24fc991997883652adc59efc486"
+ACME_TARBALL_URL="https://github.com/acmesh-official/acme.sh/archive/refs/tags/${ACME_VERSION}.tar.gz"
 SSL_DIR="$NGINX_SSL_DIR"    # /etc/nginx/ssl
 
 # ── Install acme.sh ───────────────────────────────────────────────────────────
@@ -25,8 +31,19 @@ acme_install() {
     # 也不会续期（安装器只是打印一行警告），这里先保证 cron 可用。
     ensure_cron || true
 
-    # acme.sh installer expects  email=xxx  (no dashes), not --email xxx
-    curl "${PSM_DL[@]}" -fsSL "$ACME_INSTALL_URL" | sh -s "email=$email"
+    local tmp sum
+    tmp=$(mktemp -d) || return 1
+    if ! curl "${PSM_DL[@]}" -fsSL -o "$tmp/acme.tgz" "$ACME_TARBALL_URL"; then
+        rm -rf "$tmp"; log_error "$(t cert.acme.install_failed "$ACME_TARBALL_URL")"; return 1
+    fi
+    sum=$(sha256sum "$tmp/acme.tgz" | awk '{ print $1 }')
+    if [[ "$sum" != "$ACME_TARBALL_SHA256" ]]; then
+        rm -rf "$tmp"; log_error "$(t cert.acme.checksum_bad "$ACME_VERSION" "$sum")"; return 1
+    fi
+    tar -xzf "$tmp/acme.tgz" -C "$tmp" \
+        && ( cd "$tmp/acme.sh-${ACME_VERSION}" && ./acme.sh --install --home "$ACME_HOME" -m "$email" ) >&2 \
+        || { rm -rf "$tmp"; log_error "$(t cert.acme.install_failed "$ACME_HOME/acme.sh")"; return 1; }
+    rm -rf "$tmp"
 
     export PATH="$ACME_HOME:$PATH"
     if [[ ! -f "$ACME_HOME/acme.sh" ]]; then
@@ -40,6 +57,11 @@ _acme() {
     export PATH="$ACME_HOME:$PATH"
     "$ACME_HOME/acme.sh" "$@"
 }
+
+# A certificate's name as the menus take it: a domain, or *.domain for a
+# wildcard. What leaves this check can name a directory under SSL_DIR and
+# nothing else ("../conf.d" was a way to rm -rf /etc/nginx/conf.d).
+_cert_valid_name() { is_domain "${1#\*.}"; }
 
 # acme.sh returns non-zero when it skips renewal ("Domains not changed"),
 # even though the cert already exists in its cache.  Check for that case.
@@ -102,7 +124,7 @@ _cert_ratelimit_handle() {
             || { log_error "$(t cert.rate.switch_zerossl_failed)"; return 1; }
         if _acme --issue "$@"; then
             cert_install_domain "$domain"
-            return 0
+            return
         fi
         log_error "$(t cert.rate.zerossl_failed)"
         log_warn "$(t cert.rate.zerossl_need_email)"
@@ -110,6 +132,14 @@ _cert_ratelimit_handle() {
         log_warn "$(t cert.rate.zerossl_retry_after_register)"
     fi
     return 1
+}
+
+# The temporary site that answers an HTTP-01 challenge through a running Nginx.
+_cert_webroot_conf=""
+_cert_webroot_done() {
+    [[ -n "$_cert_webroot_conf" ]] || return 0
+    rm -f "$_cert_webroot_conf"; _cert_webroot_conf=""
+    nginx -s reload 2>/dev/null || true
 }
 
 # ── Shared HTTP-01 issue logic ────────────────────────────────────────────────
@@ -139,8 +169,9 @@ NGINXEOF
         local rc=0
         acme_out=$(set -o pipefail; _acme --issue "${issue_args[@]}" 2>&1 | tee /dev/stderr) || rc=$?
         (( rc == 0 )) && issued=1
-        rm -f "$http_conf"
-        nginx -s reload 2>/dev/null || true
+        # the site that answers the challenge stays until the end: a retry with
+        # another CA (rate limit, below) is answered by it too
+        _cert_webroot_conf="$http_conf"
     else
         # Nginx not running → standalone (acme.sh binds port 80 directly)
         log_info "$(t cert.http.standalone)"
@@ -150,6 +181,8 @@ NGINXEOF
 
         local fw_tag; fw_tag=$(_fw_open80)
         [[ -n "$fw_tag" ]] && log_info "$(t cert.http.fw_opened "$fw_tag")"
+        # an interrupted issue (Ctrl-C) closes port 80 again all the same
+        [[ -n "$fw_tag" ]] && trap '_fw_close80 '"$fw_tag"'; trap - INT TERM; kill -INT $$' INT TERM
 
         issue_args=(-d "$domain" --standalone)
         local rc=0
@@ -157,6 +190,7 @@ NGINXEOF
         (( rc == 0 )) && issued=1
 
         if [[ -n "$fw_tag" ]]; then
+            trap - INT TERM
             _fw_close80 "$fw_tag"
             log_info "$(t cert.http.fw_restored "$fw_tag")"
         fi
@@ -168,16 +202,20 @@ NGINXEOF
     fi
 
     if (( issued )); then
+        _cert_webroot_done
         cert_install_domain "$domain"
-        return 0
+        return
     fi
 
     # 先判断是否命中 Let's Encrypt 限流——限流与验证方式无关，换 DNS-01 也绕不过，
     # 因此这里直接给出针对性提示并跳过下面的「切 DNS-01 重试」分支。
     if _cert_is_ratelimited "$acme_out"; then
-        _cert_ratelimit_handle "$domain" "$acme_out" "${issue_args[@]}" && return 0
-        return 1
+        local lrc=0
+        _cert_ratelimit_handle "$domain" "$acme_out" "${issue_args[@]}" || lrc=$?
+        _cert_webroot_done
+        return "$lrc"
     fi
+    _cert_webroot_done
 
     log_error "$(t cert.issue.failed_domain "$domain")"
     log_warn "$(t cert.http.conn_refused_hint)"
@@ -261,18 +299,22 @@ cert_issue_dns() {
     if (( rc != 0 )); then
         # 限流时给针对性提示并可选换 ZeroSSL 重试；否则按普通失败处理
         if _cert_is_ratelimited "$dns_out"; then
-            _cert_ratelimit_handle "${domain#\*.}" "$dns_out" \
+            _cert_ratelimit_handle "$domain" "$dns_out" \
                 --dns "$dns_plugin" -d "$domain" $extra_args && return 0
         fi
         log_error "$(t cert.issue.failed)"; return 1
     fi
 
-    cert_install_domain "${domain#\*.}"
+    # acme.sh keeps a certificate under the name it was issued for (*.example.com):
+    # installed under that name, into the directory of example.com
+    cert_install_domain "$domain"
 }
 
 # ── Manual import ─────────────────────────────────────────────────────────────
 cert_import_manual() {
     local domain; ask domain "$(t cert.ask_domain)"
+    _cert_valid_name "$domain" || { log_error "$(t cert.invalid_domain)"; return 1; }
+    domain="${domain#\*.}"
     local cert_file key_file ca_file
 
     ask cert_file "$(t cert.import.ask_cert_file)"
@@ -292,9 +334,13 @@ cert_import_manual() {
 }
 
 # ── Install cert to nginx ssl dir ─────────────────────────────────────────────
+# cert_install_domain <domain as issued>: *.example.com goes to example.com's
+# directory. A failed install (acme.sh has no such certificate) says so and
+# returns 1, instead of carrying on to a key that is not there.
 cert_install_domain() {
     local domain="$1"
-    local dest="$SSL_DIR/$domain"
+    _cert_valid_name "$domain" || { log_error "$(t cert.invalid_domain)"; return 1; }
+    local dest="$SSL_DIR/${domain#\*.}"
     mkdir -p "$dest"
 
     # acme.sh stores this and runs it from cron on every renewal, so it has to
@@ -305,11 +351,15 @@ cert_install_domain() {
     # a renewal rewrites the key: keep it readable by the cores (psm-core)
     reload_cmd="id -u psm-core >/dev/null 2>&1 && chgrp psm-core $dest/privkey.pem && chmod 640 $dest/privkey.pem; $reload_cmd"
 
-    _acme --install-cert -d "$domain" \
-        --cert-file      "$dest/cert.pem" \
-        --key-file       "$dest/privkey.pem" \
-        --fullchain-file "$dest/fullchain.pem" \
-        --reloadcmd      "$reload_cmd"
+    if ! _acme --install-cert -d "$domain" \
+            --cert-file      "$dest/cert.pem" \
+            --key-file       "$dest/privkey.pem" \
+            --fullchain-file "$dest/fullchain.pem" \
+            --reloadcmd      "$reload_cmd" \
+        || [[ ! -s "$dest/privkey.pem" || ! -s "$dest/fullchain.pem" ]]; then
+        log_error "$(t cert.install.failed "$domain")"
+        return 1
+    fi
 
     _cert_key_perms "$dest/privkey.pem"
     log_ok "$(t cert.install.installed "$dest")"
@@ -363,9 +413,11 @@ cert_delete() {
     local domain; ask domain "$(t cert.delete.ask_domain)"
     # 域名为空时直接返回，避免 rm -rf 在空值下清空整个证书目录
     [[ -z "$domain" ]] && { log_error "$(t cert.domain_required)"; return 1; }
-    _acme --remove -d "$domain" 2>/dev/null
-    ask_yn "$(t cert.delete.ask_local "$SSL_DIR/$domain")" N \
-        && rm -rf "${SSL_DIR:?}/${domain:?}"
+    # 必须是域名（或 *.域名）：rm -rf 的目标只能是证书目录里的一个子目录
+    _cert_valid_name "$domain" || { log_error "$(t cert.invalid_domain)"; return 1; }
+    _acme --remove -d "$domain" 2>/dev/null || true
+    ask_yn "$(t cert.delete.ask_local "$SSL_DIR/${domain#\*.}")" N \
+        && rm -rf "${SSL_DIR:?}/${domain#\*.}"
     log_ok "$(t cert.delete.deleted)"
 }
 
@@ -385,6 +437,8 @@ _ensure_cf_env() {
 cert_ensure_domain() {
     local domain="$1"
     local reason="${2:-$(t cert.ensure.default_reason)}"
+    _cert_valid_name "$domain" || { log_error "$(t cert.invalid_domain)"; return 1; }
+    domain="${domain#\*.}"
     local cert_dir="$SSL_DIR/$domain"
 
     if [[ -f "$cert_dir/fullchain.pem" && -f "$cert_dir/privkey.pem" ]]; then

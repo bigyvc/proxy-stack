@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# sni_cli.sh — psm sni find: REALITY camouflage targets near this server,
-# without questions (the PSM panel's "自动选择伪装目标").
+# sni_cli.sh — psm sni find|check: REALITY camouflage targets near this
+# server, without questions (the PSM panel's "自动选择伪装目标").
 #
 # The same search as the REALITY menu (lib/xray/sni_finder.sh): a
 # cyberspace-mapping engine (Netlas, Quake, ZoomEye or FOFA) lists hosts in
@@ -8,6 +8,10 @@
 # checked with one TLS handshake (TLS 1.3, X25519, h2). The engine's API key
 # comes on stdin (--key-stdin), so it never shows in a process list, and is
 # used for this search only; without it, the key saved by the menu is used.
+#
+# psm sni check is the TLS check alone, for candidates found elsewhere: the
+# PSM panel asks the mapping engine itself, so the key stays in the panel, and
+# sends only the names it found here.
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
@@ -17,19 +21,74 @@ _sni_cli_usage() {
     cat <<'EOF'
 Usage:
   psm sni find [--engine netlas|quake|zoomeye|fofa] [--key-stdin] [--max N] [--json]
+  psm sni check --input - [--json]
 
 Finds REALITY camouflage targets (SNI and dest) in this server's own network:
 hosts in the same ASN, from a cyberspace-mapping engine, each checked with a
 TLS handshake. --key-stdin reads the engine's API key from the first line of
 stdin and uses it for this search only; without it the engine and key saved
 by the REALITY menu are used. --max bounds the hosts asked for (default 40).
+
+check runs the same TLS handshake on candidates given on stdin as
+{"pairs":[{"sni":"www.example.com","dest":"203.0.113.9:443"}, …]} (at most
+60; a pair that is not a host name and a host:port is left out) and lists
+those that pass. It uses no mapping engine and no key.
 EOF
+}
+
+# The candidates on stdin: well-formed names and host:port destinations only
+# (nothing else reaches openssl), "sni|dest" per line.
+_sni_cli_pairs() {
+    jq -r '
+        (.pairs // [])[:60][] | select(type == "object")
+        | select((.sni | type) == "string"
+                 and (.sni | test("^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z][A-Za-z0-9-]{0,62}$")))
+        | select((.dest | type) == "string"
+                 and (.dest | test("^([A-Za-z0-9.-]{1,253}|\\[[0-9A-Fa-f:.]{2,45}\\]):[0-9]{1,5}$")))
+        | "\(.sni)|\(.dest)"'
+}
+
+_sni_cli_check() {
+    local input="" as_json=0
+    while (( $# )); do
+        case "$1" in
+            --input) input="${2:-}"; shift 2 ;;
+            --json) as_json=1; shift ;;
+            *) _sni_cli_err "unknown option: $1"; return 2 ;;
+        esac
+    done
+    [[ "$input" == "-" ]] || { _sni_cli_err "check reads its candidates from stdin: --input -"; return 2; }
+    local raw pairs
+    raw=$(head -c 65536)
+    exec </dev/null   # nothing below may wait for an answer
+    pairs=$(printf '%s' "$raw" | _sni_cli_pairs 2>/dev/null) \
+        || { _sni_cli_err "--input: not {\"pairs\":[{\"sni\":…,\"dest\":…}]}"; return 2; }
+    [[ -n "$pairs" ]] || { _sni_cli_err "--input: no candidate with a host name and a host:port"; return 2; }
+
+    # shellcheck source=/dev/null
+    source "$LIB_DIR/xray/sni_finder.sh"
+    _sni_check_deps
+    local healthy out
+    healthy=$(_sni_validate_pairs "$pairs") || true
+    healthy=$(printf '%s\n' "$healthy" | sed '/^$/d' | sort -t"$(printf '\t')" -k3,3n) || true
+    out=$(printf '%s\n' "$healthy" | jq -R -s -c '
+        { candidates: [ split("\n")[] | select(length > 0) | split("\t")
+                        | { sni: .[0], dest: .[1], rtt_ms: ((.[2] // "0") | tonumber? // 0), warn: (.[3] // "") } ] }')
+    if (( as_json )); then
+        printf '%s\n' "$out"
+    else
+        printf '%s' "$out" | jq -r '.candidates[] | "  \(.sni)  \(.dest)  \(.rtt_ms)ms  \(.warn)"'
+    fi
+    # none passing is an answer, not a failure: the panel says so and the
+    # target is typed in
+    return 0
 }
 
 psm_sni_cli() {
     local cmd="${1:-}"
     case "$cmd" in
         find) shift ;;
+        check) shift; _sni_cli_check "$@"; return ;;
         help|--help|-h|"") _sni_cli_usage; return 0 ;;
         *) _sni_cli_err "unknown command: $cmd"; _sni_cli_usage >&2; return 2 ;;
     esac

@@ -314,13 +314,15 @@ sb_get_inbounds() {
 sb_add_inbound() {
     local fragment="$1"
     local tmp; tmp=$(mktemp)
-    jq ".inbounds += [$fragment]" "$SB_CFG" > "$tmp" && mv "$tmp" "$SB_CFG"
+    jq --argjson f "$fragment" '.inbounds += [$f]' "$SB_CFG" > "$tmp" && psm_file_replace "$SB_CFG" "$tmp"
+    local rc=$?; rm -f "$tmp"; return "$rc"
 }
 
 sb_remove_inbound_by_tag() {
     local tag="$1"
     local tmp; tmp=$(mktemp)
-    jq "del(.inbounds[] | select(.tag == \"$tag\"))" "$SB_CFG" > "$tmp" && mv "$tmp" "$SB_CFG"
+    jq --arg t "$tag" 'del(.inbounds[] | select(.tag == $t))' "$SB_CFG" > "$tmp" && psm_file_replace "$SB_CFG" "$tmp"
+    local rc=$?; rm -f "$tmp"; return "$rc"
 }
 
 # 原子替换 SB_CFG：仅当候选文件为非空合法 JSON 时才落盘，避免 jq 半路失败
@@ -599,19 +601,19 @@ _sb_view_all_nodes() {
 
     while IFS=$'\t' read -r tag port sni insec; do
         i=$((i+1)); _protos+=("trojan"); _tags+=("$tag")
-        printf "  ${CYAN}%%2d.${NC} ${GREEN}[Trojan]${NC}   %%-18s  port=%%-6s  sni=%%s\n" \
+        printf "  ${CYAN}%2d.${NC} ${GREEN}[Trojan]${NC}   %-18s  port=%-6s  sni=%s\n" \
                "$i" "$tag" "$port" "$sni"
     done < <(_sb_trojan_list 2>/dev/null)
 
     while IFS=$'\t' read -r tag port sni insec; do
         i=$((i+1)); _protos+=("vmess"); _tags+=("$tag")
-        printf "  ${CYAN}%%2d.${NC} ${BLUE}[VMess]${NC}    %%-18s  port=%%-6s  sni=%%s\n" \
+        printf "  ${CYAN}%2d.${NC} ${BLUE}[VMess]${NC}    %-18s  port=%-6s  sni=%s\n" \
                "$i" "$tag" "$port" "$sni"
     done < <(_sb_vmess_list 2>/dev/null)
 
     while IFS=$'\t' read -r tag port laddr auth; do
         i=$((i+1)); _protos+=("socks"); _tags+=("$tag")
-        printf "  ${CYAN}%%2d.${NC} ${YELLOW}[SOCKS5]${NC}   %%-18s  port=%%-6s  listen=%%-15s  auth=%%s\n" \
+        printf "  ${CYAN}%2d.${NC} ${YELLOW}[SOCKS5]${NC}   %-18s  port=%-6s  listen=%-15s  auth=%s\n" \
                "$i" "$tag" "$port" "$laddr" "$auth"
     done < <(_sb_socks_list 2>/dev/null)
 

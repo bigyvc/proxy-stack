@@ -2,7 +2,9 @@
 # Runs one integration suite in a disposable container, the same way on a test
 # box and in GitHub Actions:
 #
-#   tests/integration/container.sh debian|ubuntu24|ubuntu22|alpine|rocky9|alma8|debian10 full|nginx443|e2e|users|snell
+#   tests/integration/container.sh debian|ubuntu24|ubuntu22|alpine|rocky9|alma8|debian10 full|nginx443|e2e|users|snell|slim|retry|panelside|audit
+#
+# (relay.sh and migrate.sh build machines of their own and run on the host.)
 #
 # The three supported families: Debian 13 and Ubuntu 24.04 / 22.04 (22.04 for
 # jq 1.6 and Nginx 1.18), Alpine 3.22 (OpenRC, musl), and the Red Hat family as

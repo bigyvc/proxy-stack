@@ -386,13 +386,16 @@ xray_get_inbounds() {
 xray_add_inbound() {
     local fragment="$1"
     local tmp; tmp=$(mktemp)
-    jq ".inbounds += [$fragment]" "$XRAY_CFG" > "$tmp" && mv "$tmp" "$XRAY_CFG"
+    # the inbound as a value: one that is not JSON fails here, and the config stays
+    jq --argjson f "$fragment" '.inbounds += [$f]' "$XRAY_CFG" > "$tmp" && psm_file_replace "$XRAY_CFG" "$tmp"
+    local rc=$?; rm -f "$tmp"; return "$rc"
 }
 
 xray_remove_inbound_by_tag() {
     local tag="$1"
     local tmp; tmp=$(mktemp)
-    jq "del(.inbounds[] | select(.tag == \"$tag\"))" "$XRAY_CFG" > "$tmp" && mv "$tmp" "$XRAY_CFG"
+    jq --arg t "$tag" 'del(.inbounds[] | select(.tag == $t))' "$XRAY_CFG" > "$tmp" && psm_file_replace "$XRAY_CFG" "$tmp"
+    local rc=$?; rm -f "$tmp"; return "$rc"
 }
 
 xray_update_inbound() {

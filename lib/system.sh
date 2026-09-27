@@ -8,6 +8,9 @@ show_system_info() {
     local ipv4; ipv4=$(get_ipv4)
     local ipv6; ipv6=$(get_ipv6)
     local cpu_model; cpu_model=$(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs)
+    # ARM boards list no "model name": lscpu names the core, /proc/cpuinfo the board
+    [[ -n "$cpu_model" ]] || cpu_model=$(lscpu 2>/dev/null | awk -F: '/^Model name/ { sub(/^[ \t]+/, "", $2); print $2; exit }')
+    [[ -n "$cpu_model" ]] || cpu_model=$(grep -m1 -iE "^(Hardware|Processor|cpu model)" /proc/cpuinfo | cut -d: -f2 | xargs)
     local mem_total; mem_total=$(awk '/MemTotal/{printf "%.0f MB", $2/1024}' /proc/meminfo)
     local disk_free; disk_free=$(df -h / | awk 'NR==2{print $4}')
     local kernel; kernel=$(uname -r)
@@ -57,7 +60,8 @@ enable_bbr() {
     # rejects `tcp_congestion_control = bbr` and falls back to the default — so
     # BBR "disappears" after a reboot even though 99-bbr.conf is present.
     modprobe tcp_bbr 2>/dev/null || true
-    echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+    mkdir -p /etc/modules-load.d
+    grep -qx tcp_bbr /etc/modules-load.d/bbr.conf 2>/dev/null || echo "tcp_bbr" >> /etc/modules-load.d/bbr.conf
 
     # systemd-sysctl.service (boot-time apply, all supported distros) reads
     # /etc/sysctl.d/*.conf, not /etc/sysctl.conf — which some Debian 12
@@ -114,19 +118,24 @@ create_swap() {
     fallocate -l "${size_mb}M" "$swapfile" 2>/dev/null \
         || dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none
     chmod 600 "$swapfile"
-    mkswap "$swapfile" &>/dev/null
-    swapon "$swapfile"
+    # a container (LXC, OpenVZ) may not be allowed to: nothing is left behind then
+    if ! mkswap "$swapfile" &>/dev/null || ! swapon "$swapfile" 2>/dev/null; then
+        rm -f "$swapfile"
+        log_error "$(t system.swap.failed)"
+        return 1
+    fi
 
-    grep -q "$swapfile" /etc/fstab \
+    grep -q "^${swapfile}[[:space:]]" /etc/fstab \
         || echo "$swapfile none swap sw 0 0" >> /etc/fstab
 
     log_ok "$(t system.swap.created "$size_mb")"
 }
 
 delete_swap() {
-    swapoff /swapfile 2>/dev/null
+    swapoff /swapfile 2>/dev/null || true
     rm -f /swapfile
-    sed -i '/swapfile/d' /etc/fstab
+    # this line only: /swapfile2 or a comment mentioning swapfile stay
+    sed -i '\|^/swapfile[[:space:]]|d' /etc/fstab
     log_ok "$(t system.swap.deleted)"
 }
 
@@ -153,17 +162,29 @@ set_dns() {
         ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf 2>/dev/null
     fi
 
-    cat > /etc/resolv.conf <<EOF
-nameserver $ns1
-nameserver $ns2
-EOF
-    chattr +i /etc/resolv.conf 2>/dev/null   # prevent overwrite
+    # the addresses written as they are: each one an IP
+    local ns
+    for ns in "$ns1" "$ns2"; do
+        is_ipv4 "$ns" || [[ "$ns" =~ ^[0-9a-fA-F:]+$ && "$ns" == *:* ]] || { log_error "$(t system.dns.bad_ip "$ns")"; return 1; }
+    done
+    # immutable from the last time PSM set it (chattr +i below): a write to it
+    # would fail without a word, and the old servers would stay
+    chattr -i /etc/resolv.conf 2>/dev/null || true
+    if ! printf 'nameserver %s\nnameserver %s\n' "$ns1" "$ns2" > /etc/resolv.conf 2>/dev/null \
+        || ! grep -qx "nameserver $ns1" /etc/resolv.conf; then
+        log_error "$(t system.dns.write_failed)"
+        return 1
+    fi
+    chattr +i /etc/resolv.conf 2>/dev/null || true   # prevent overwrite (DHCP, NetworkManager)
     log_ok "$(t system.dns.set "$ns1" "$ns2")"
 }
 
 # ── Timezone ──────────────────────────────────────────────────────────────────
 set_timezone() {
     local tz; ask tz "$(t system.timezone.ask)" "Asia/Shanghai"
+    # a zone this system knows (a dangling /etc/localtime would leave UTC in place)
+    [[ "$tz" =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ && -f "/usr/share/zoneinfo/$tz" ]] \
+        || { log_error "$(t system.timezone.unknown "$tz")"; return 1; }
     timedatectl set-timezone "$tz" 2>/dev/null \
         || { ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime && echo "$tz" > /etc/timezone; }
     log_ok "$(t system.timezone.set "$tz")"
@@ -347,6 +368,42 @@ firewall_close_port() {
 }
 
 # ── Firewall quick-lock ───────────────────────────────────────────────────────
+# Everything that has to stay reachable, as "port/proto" lines: SSH on the
+# port(s) sshd really listens on (not only 22), 80 and 443, every PSM node
+# (on the L4 it takes clients on), relay and standalone server, and every port
+# PSM opened before. The quick-lock lets these in before it closes the rest:
+# it used to reset ufw (or switch firewalld to the drop zone) and let in 22 and
+# 443 alone — an SSH on another port was cut off, and every node with it.
+_fw_keep_ports() {
+    local p
+    {
+        p=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }')
+        [[ -n "$p" ]] || p=$(awk 'tolower($1) == "port" { print $2 }' /etc/ssh/sshd_config 2>/dev/null)
+        for p in ${p:-22}; do echo "$p/tcp"; done
+        printf '80/tcp\n443/tcp\n443/udp\n'
+        [[ -s "$CFG_DIR/firewall-ports" ]] && cat "$CFG_DIR/firewall-ports"
+        # the nodes, as psm node add opens them
+        ( source "$LIB_DIR/node_cli.sh" >/dev/null 2>&1 || exit 0
+          _node_cli_collect "" "" 2>/dev/null | jq -c '.[]' 2>/dev/null | while IFS= read -r it; do
+              n=$(jq -c '.node' <<<"$it")
+              [[ "$(jq -r '.listen_addr // .listen // ""' <<<"$n")" == 127.0.0.1 ]] && continue
+              port=$(jq -r '.public_port // .port // empty' <<<"$n"); [[ "$port" =~ ^[0-9]+$ ]] || continue
+              case "$(_node_cli_fw_l4 "$(jq -r '.protocol' <<<"$it")" "$n")" in
+                  udp) echo "$port/udp" ;; both) echo "$port/tcp"; echo "$port/udp" ;; *) echo "$port/tcp" ;;
+              esac
+          done ) 2>/dev/null
+        # the relays
+        jq -r '.[] | "\(.listen_port)/tcp", (if .udp and ((.mode // "") != "tunnel-exit") then "\(.listen_port)/udp" else empty end)' \
+            "$CFG_DIR/realm/rules.json" 2>/dev/null
+        # the standalone servers
+        p=$(jq -r '.server_port // empty' /etc/ss-rust/config.json 2>/dev/null); [[ -n "$p" ]] && printf '%s/tcp\n%s/udp\n' "$p" "$p"
+        p=$(awk -F: '/^listen/ { gsub(/[^0-9]/, "", $NF); print $NF; exit }' /etc/snell/users/snell-main.conf 2>/dev/null)
+        [[ -n "$p" ]] && printf '%s/tcp\n%s/udp\n' "$p" "$p"
+        p=$(awk '/^listen:/ { gsub(/[^0-9]/, "", $2); print $2; exit }' /etc/hysteria/config.yaml 2>/dev/null)
+        [[ -n "$p" ]] && printf '%s/udp\n' "$p"
+    } | grep -E '^[0-9]{1,5}/(tcp|udp)$' | sort -u -t/ -k1,1n -k2,2
+}
+
 configure_firewall() {
     local fw=""
     # Prefer a running backend; otherwise fall back to whichever is installed
@@ -360,14 +417,16 @@ configure_firewall() {
         return 0
     fi
 
+    local keep p; keep=$(_fw_keep_ports)
     log_step "$(t system.fw.configuring "$fw")"
+    log_info "$(t system.fw.keeping "$(tr '\n' ' ' <<<"$keep")")"
+    ask_yn "$(t system.fw.ask_apply)" Y || { log_info "$(t common.cancelled)"; return 0; }
+
     if [[ "$fw" == "ufw" ]]; then
-        ufw --force reset &>/dev/null
+        # no reset: the rules there stay, these are added before incoming is denied
+        for p in $keep; do ufw allow "$p" >/dev/null 2>&1 || log_warn "$(t system.fw.ufw_allow_fail "ufw allow $p")"; done
         ufw default deny incoming &>/dev/null
         ufw default allow outgoing &>/dev/null
-        ufw allow 22/tcp
-        ufw allow 443/tcp
-        ufw allow 443/udp
         ufw --force enable &>/dev/null
     else
         # firewalld may be installed but stopped — start it before we rely on it.
@@ -378,11 +437,13 @@ configure_firewall() {
                 return 1
             fi
         fi
-        firewall-cmd --permanent --set-default-zone=drop || { log_error "$(t system.fw.firewalld_config_fail "firewall-cmd --permanent --set-default-zone=drop")"; return 1; }
-        firewall-cmd --permanent --add-port=22/tcp  || { log_error "$(t system.fw.firewalld_config_fail "firewall-cmd --permanent --add-port=22/tcp")"; return 1; }
-        firewall-cmd --permanent --add-port=443/tcp || { log_error "$(t system.fw.firewalld_config_fail "firewall-cmd --permanent --add-port=443/tcp")"; return 1; }
-        firewall-cmd --permanent --add-port=443/udp || { log_error "$(t system.fw.firewalld_config_fail "firewall-cmd --permanent --add-port=443/udp")"; return 1; }
-        firewall-cmd --reload || { log_error "$(t system.fw.firewalld_reload_fail)"; return 1; }
+        # the default zone (public) already turns away what it does not let in:
+        # the ports are added to it, and nothing else of it changes
+        for p in $keep; do
+            firewall-cmd --permanent --add-port="$p" >/dev/null 2>&1 \
+                || { log_error "$(t system.fw.firewalld_config_fail "firewall-cmd --permanent --add-port=$p")"; return 1; }
+        done
+        firewall-cmd --reload >/dev/null 2>&1 || { log_error "$(t system.fw.firewalld_reload_fail)"; return 1; }
     fi
     log_ok "$(t system.fw.configured)"
 }

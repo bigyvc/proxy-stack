@@ -270,6 +270,10 @@ f2b_configure_sshd_jail() {
     ask maxretry "$(t security.f2b.ask_maxretry)" "5"
     ask findtime "$(t security.f2b.ask_findtime)" "10m"
     ask bantime  "$(t security.f2b.ask_bantime)" "1h"
+    # fail2ban refuses its whole config over one bad value — every jail stops
+    [[ "$maxretry" =~ ^[1-9][0-9]{0,3}$ ]] || { log_error "$(t security.f2b.bad_value "maxretry" "$maxretry")"; return 1; }
+    _f2b_valid_time "$findtime" || { log_error "$(t security.f2b.bad_value "findtime" "$findtime")"; return 1; }
+    [[ "$bantime" == -1 ]] || _f2b_valid_time "$bantime" || { log_error "$(t security.f2b.bad_value "bantime" "$bantime")"; return 1; }
 
     # Alpine：sshd 经 syslog 写进 /var/log/messages，而 fail2ban 自带路径指向的
     # auth.log / secure 在那里不存在，jail 会因为找不到日志文件而起不来。
@@ -278,6 +282,8 @@ f2b_configure_sshd_jail() {
         logpath_line="logpath   = /var/log/messages"
     fi
 
+    local prev=""
+    [[ -f "$F2B_SSHD_JAIL" ]] && { prev=$(mktemp) && cp -p "$F2B_SSHD_JAIL" "$prev"; }
     cat > "$F2B_SSHD_JAIL" <<EOF
 # Managed by PSM — 通过「安全加固 → Fail2ban」菜单重新生成，请勿手动编辑
 [sshd]
@@ -290,8 +296,20 @@ findtime  = ${findtime}
 bantime   = ${bantime}
 banaction = ${banaction}
 EOF
+    # the whole configuration, as fail2ban will read it: one it would not
+    # start with goes back to what was there
+    if command -v fail2ban-client &>/dev/null && ! fail2ban-client -t >/dev/null 2>&1; then
+        if [[ -n "$prev" ]]; then cat "$prev" > "$F2B_SSHD_JAIL"; else rm -f "$F2B_SSHD_JAIL"; fi
+        rm -f "$prev"
+        log_error "$(t security.f2b.config_rejected)"
+        return 1
+    fi
+    rm -f "$prev"
     log_ok "$(t security.f2b.ssh_rule_written "$ports" "$findtime" "$maxretry" "$bantime" "$banaction")"
 }
+
+# A time fail2ban reads: seconds, or a number with a unit (10m, 1h, 1d, 1w…)
+_f2b_valid_time() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)?(s|m|h|d|w|mo|y|sec|min|hour|hours|day|days|week|weeks|month|months|year|years)?$ ]]; }
 
 f2b_configure_recidive_jail() {
     mkdir -p "$F2B_JAIL_DIR"
@@ -333,12 +351,38 @@ ignoreip = 127.0.0.1/8 ::1 ${ips}
 EOF
 }
 
+# An address or a network fail2ban reads (IPv4 / IPv6, with an optional
+# /prefix): anything else in ignoreip makes it refuse its whole config.
+_f2b_valid_ip() {
+    local a="${1%/*}" m=""
+    [[ "$1" == */* ]] && m="${1##*/}"
+    if is_ipv4 "$a"; then
+        [[ -z "$m" ]] || { [[ "$m" =~ ^[0-9]{1,2}$ ]] && (( 10#$m <= 32 )); }
+    elif [[ "$a" =~ ^[0-9a-fA-F:]+$ && "$a" == *:* ]]; then
+        [[ -z "$m" ]] || { [[ "$m" =~ ^[0-9]{1,3}$ ]] && (( 10#$m <= 128 )); }
+    else
+        return 1
+    fi
+}
+
+# f2b_whitelist_ip <ip>: without questions (the honeypot adds the admin's own)
+f2b_whitelist_ip() {
+    local ip="$1"
+    _f2b_valid_ip "$ip" || { log_error "$(t security.f2b.bad_ip "$ip")"; return 1; }
+    mkdir -p "$F2B_SEC_DIR"
+    touch "$F2B_WHITELIST_FILE"
+    grep -qxF "$ip" "$F2B_WHITELIST_FILE" && return 0
+    echo "$ip" >> "$F2B_WHITELIST_FILE"
+    _f2b_write_defaults_jail
+}
+
 f2b_whitelist_add() {
     mkdir -p "$F2B_SEC_DIR"
     local suggested; suggested=$(_f2b_current_client_ip)
     local ip
     ask ip "$(t security.f2b.ask_whitelist_ip)" "${suggested:-}"
     [[ -z "$ip" ]] && { log_warn "$(t security.f2b.no_input_cancel)"; return 1; }
+    _f2b_valid_ip "$ip" || { log_error "$(t security.f2b.bad_ip "$ip")"; return 1; }
     touch "$F2B_WHITELIST_FILE"
     if grep -qxF "$ip" "$F2B_WHITELIST_FILE"; then
         log_info "$(t security.f2b.ip_already_whitelisted)"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # migrate.sh — move a PSM server to another host
 #
-#   psm migrate export [--output FILE] [--encrypt]
+#   psm migrate export [--output FILE] [--no-encrypt]
 #   psm migrate import FILE [--yes] [--force]
 #   psm migrate push [USER@]HOST [--port N] [--identity KEY] [--force]
 #
@@ -32,7 +32,7 @@ _mig_fail()  { MIG_FAILED=$((MIG_FAILED + 1)); }
 _mig_paths() {
     local f
     printf '%s\n' "$XRAY_CFG_DIR" "$SINGBOX_CFG_DIR" "$MIHOMO_CFG_DIR" \
-        /etc/hysteria /etc/ss-rust /etc/snell /etc/realm /etc/psm \
+        /etc/hysteria /etc/ss-rust /etc/snell /etc/realm /etc/psm-gost /etc/psm \
         "$NGINX_SSL_DIR" "$NGINX_STREAM_DIR" /var/www/psm-camouflage "$ACME_HOME"
     # PSM's own Nginx sites; not the distro's files, nor acme.sh's temporary ones
     for f in "$NGINX_HTTP_DIR"/*.conf; do
@@ -148,8 +148,8 @@ _mig_export_to() {
     nodes=$(jq -r '.nodes' "$work/manifest.json")
     mkdir -p "$(dirname "$out")"
     if (( encrypt )); then
-        PSM_MIGRATE_PASS="$pass" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-            -pass env:PSM_MIGRATE_PASS -in "$work/bundle.tgz" -out "$out" \
+        openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -pass fd:3 -in "$work/bundle.tgz" -out "$out" 3< <(printf '%s' "$pass") \
             || { rm -rf "$work"; log_error "$(t migrate.pack_failed)"; return 1; }
     else
         mv "$work/bundle.tgz" "$out" || { rm -rf "$work"; log_error "$(t migrate.pack_failed)"; return 1; }
@@ -159,12 +159,16 @@ _mig_export_to() {
     log_ok "$(t migrate.exported "$out" "$(du -h "$out" | cut -f1)" "$nodes")"
 }
 
+# Encrypted unless asked not to be: a bundle is every private key and password
+# of the server, and it gets copied around. --encrypt, the default now, is
+# still taken from scripts written when it was not.
 psm_migrate_export() {
-    local out="" encrypt=0 pass=""
+    local out="" encrypt=1 pass=""
     while (( $# )); do
         case "$1" in
             --output|-o) [[ -n "${2:-}" ]] || { _mig_usage; return 2; }; out="$2"; shift 2; continue ;;
             --encrypt) encrypt=1 ;;
+            --no-encrypt) encrypt=0 ;;
             *) _mig_usage; return 2 ;;
         esac
         shift
@@ -183,8 +187,8 @@ _mig_unpack() {
     local file="$1" dir="$2" src="$1" pass
     if [[ "$(head -c 8 "$file" 2>/dev/null | tr -d '\000')" == "Salted__" ]]; then
         pass=$(_mig_passphrase existing) || return 1
-        PSM_MIGRATE_PASS="$pass" openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-            -pass env:PSM_MIGRATE_PASS -in "$file" -out "$dir/bundle.tgz" 2>/dev/null \
+        openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -pass fd:3 -in "$file" -out "$dir/bundle.tgz" 3< <(printf '%s' "$pass") 2>/dev/null \
             || { log_error "$(t migrate.bad_pass)"; return 1; }
         src="$dir/bundle.tgz"
     fi
@@ -254,8 +258,11 @@ _mig_restore() {   # <work dir> <manifest>
     src_cfg=$(jq -r '.source.cfg_dir // empty' "$2")
     if [[ -n "$src_cfg" && "$src_cfg" != "$CFG_DIR" ]]; then
         log_info "$(t migrate.remap "$src_cfg" "$CFG_DIR")"
+        local from to
+        from=$(printf '%s' "$src_cfg" | sed -e 's/[]\/$*.^|[]/\\&/g')
+        to=$(printf '%s' "$CFG_DIR" | sed -e 's/[\\|&]/\\&/g')
         while IFS= read -r f; do
-            sed -i "s|${src_cfg}|${CFG_DIR}|g" "$f"
+            sed -i "s|${from}|${to}|g" "$f"
         done < <(grep -rlF "$src_cfg" "$CFG_DIR" "$XRAY_CFG_DIR" "$SINGBOX_CFG_DIR" "$MIHOMO_CFG_DIR" \
                      "$NGINX_STREAM_DIR" "$NGINX_HTTP_DIR" 2>/dev/null || true)
     fi
@@ -387,7 +394,7 @@ _mig_jobs() {
 
 _mig_notices() {   # <work dir> <manifest>
     local list=() d ip old domains=""
-    for d in hysteria ss-rust snell realm; do
+    for d in hysteria ss-rust snell realm psm-gost; do
         [[ -n "$(ls -A "$1/files/etc/$d" 2>/dev/null)" ]] && list+=("$d")
     done
     (( ${#list[@]} )) && log_warn "$(t migrate.standalone "${list[*]}")"
@@ -479,13 +486,16 @@ psm_migrate_push() {
         detect_os
         case "$PKG_MGR" in yum) pkg_install openssh-clients ;; *) pkg_install openssh-client ;; esac >/dev/null 2>&1 || true
     fi
-    # One connection for every step, so a password is asked once.
-    local ssh=(ssh -p "$port" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15
-               -o ControlMaster=auto -o "ControlPath=/tmp/psm-mig-%C" -o ControlPersist=120)
-    [[ -n "$ident" ]] && ssh+=(-i "$ident")
-
+    # One connection for every step, so a password is asked once; its socket
+    # in a directory of this run's own, not under a name anyone can predict in
+    # /tmp. A host seen for the first time is trusted (its key is printed and
+    # kept) where ssh can do that (OpenSSH 7.6+); an older ssh asks.
     local work bundle rc=0
     work=$(mktemp -d); bundle="$work/psm-migrate.tgz"
+    local ssh=(ssh -p "$port" -o ServerAliveInterval=15
+               -o ControlMaster=auto -o "ControlPath=$work/ctl-%C" -o ControlPersist=120)
+    ssh -G -o StrictHostKeyChecking=accept-new localhost >/dev/null 2>&1 && ssh+=(-o StrictHostKeyChecking=accept-new)
+    [[ -n "$ident" ]] && ssh+=(-i "$ident")
     _mig_export_to "$bundle" 0 || { rm -rf "$work"; return 1; }
 
     log_step "$(t migrate.push.prepare "$target")"
@@ -504,17 +514,21 @@ psm_migrate_push() {
             | "${ssh[@]}" "$target" 'umask 077; cat > /root/psm.tgz' \
         || ! "${ssh[@]}" "$target" 'umask 077; cat > /root/psm-migrate.tgz' < "$bundle"; then
         rc=1
+        # whatever arrived goes: it holds every key of this server
+        "${ssh[@]}" "$target" 'rm -f /root/psm.tgz /root/psm-migrate.tgz' >/dev/null 2>&1 || true
     fi
 
     if (( rc == 0 )); then
         log_step "$(t migrate.push.remote "$target")"
+        # the trap removes both files on every way out, an unpacking that fails
+        # (set -e) included
         "${ssh[@]}" "$target" "bash -c '
+            trap \"rm -f /root/psm.tgz /root/psm-migrate.tgz\" EXIT
             set -e
             if [ ! -f /opt/psm/lib/migrate.sh ]; then mkdir -p /opt/psm && tar -xzf /root/psm.tgz -C /opt/psm; fi
             rm -f /root/psm.tgz
             rc=0
             bash /opt/psm/manager.sh migrate import /root/psm-migrate.tgz --yes $force </dev/null || rc=\$?
-            rm -f /root/psm-migrate.tgz
             exit \$rc'" || rc=$?
     fi
     "${ssh[@]}" -O exit "$target" >/dev/null 2>&1 || true

@@ -208,6 +208,29 @@ func TestSniFindSendsTheKeyOnStdinOnly(t *testing.T) {
 	}
 }
 
+func TestSniCheckSendsOnlyNamesAndHostPorts(t *testing.T) {
+	good := `{"pairs":[{"sni":"www.example.com","dest":"203.0.113.9:443"},{"sni":"a.example.org","dest":"[2001:db8::1]:443"}]}`
+	p := &fakePanel{tasks: []task{
+		{ID: 1, Kind: "sni.check", Data: json.RawMessage(good)},
+		{ID: 2, Kind: "sni.check", Data: json.RawMessage(`{"pairs":[{"sni":"-servername","dest":"1.1.1.1:443"}]}`)},
+		{ID: 3, Kind: "sni.check", Data: json.RawMessage(`{"pairs":[{"sni":"a.example.com","dest":"1.1.1.1:443 -x"}]}`)},
+		{ID: 4, Kind: "sni.check", Data: json.RawMessage(`{"pairs":[{"sni":"a.example.com","dest":"1.1.1.1"}]}`)},
+		{ID: 5, Kind: "sni.check", Data: json.RawMessage(`{"pairs":[]}`)},
+		{ID: 6, Kind: "sni.check", Data: json.RawMessage(`{"pairs":[{"sni":"localhost","dest":"1.1.1.1:443"}]}`)},
+	}}
+	f := &fakeRunner{stdout: map[string]string{"check": `{"candidates":[]}`}}
+	a, done := newTestAgent(t, p, f)
+	defer done()
+
+	if _, err := a.step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []call{{[]string{"sni", "check", "--input", "-", "--json"}, good}}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Fatalf("psm calls\n got %q\nwant %q (an option, a dest with more in it, no port, no pairs, no dot never reach psm)", f.calls, want)
+	}
+}
+
 func TestSyncRunsTasksAndReportsResults(t *testing.T) {
 	p := &fakePanel{tasks: []task{
 		{ID: 1, Kind: "node.add", Core: "xray", Protocol: "reality", Data: json.RawMessage(`{"tag":"hk","port":443,"server_name":"a.example"}`), Server: "203.0.113.10", Format: "uri"},
@@ -468,6 +491,39 @@ func TestBadTasksNeverReachPSM(t *testing.T) {
 		{ID: 19, Kind: "traffic.set", Tag: "a", ResetDay: 31},
 		{ID: 20, Kind: "traffic.reset", Tag: "a b"},
 	}}
+	// relays: the hop itself, then every field psm relay reads, and none it does not
+	rl := func(extra string) json.RawMessage {
+		return json.RawMessage(`{"tag":"r","listen_port":1000,"remote_host":"198.51.100.2","remote_port":443` + extra + `}`)
+	}
+	for i, d := range []json.RawMessage{
+		json.RawMessage(`{"tag":"r","listen_port":1000,"remote_host":"$(id)","remote_port":443}`),
+		rl(`,"tls_cert":"/etc/shadow"`), // a file on the server: never from the panel
+		rl(`,"exit_ca":"/etc/shadow"`),  // psm's own to choose
+		rl(`,"engine":"nginx"`),
+		rl(`,"mode":"proxy"`),
+		rl(`,"transport":"kcp"`),
+		rl(`,"strategy":"best"`),
+		rl(`,"targets":[]`),
+		rl(`,"targets":[{"host":"--help","port":1}]`),
+		rl(`,"targets":[{"host":"a-.example.com","port":1}]`),
+		rl(`,"ws_host":"-x.example.com"`),
+		rl(`,"targets":[{"host":"a","port":1,"path":"/x"}]`),
+		rl(`,"targets":[` + strings.Repeat(`{"host":"a","port":1},`, 16) + `{"host":"a","port":1}]`),
+		rl(`,"secret":"short"`),
+		rl(`,"ws_path":"../../etc"`),
+		rl(`,"exit_pin":"xyz"`),
+		rl(`,"exit_cert_pem":"not a certificate"`),
+		rl(`,"expires_at":"tomorrow"`),
+		rl(`,"limit_bytes":-1`),
+		rl(`,"reset_day":31`),
+		rl(`,"speed_mbps":"fast"`),
+		rl(`,"port_range":"9000-100"`),
+		rl(`,"udp":"yes"`),
+		rl(`,"tls_sni":"a b"`),
+	} {
+		p.tasks = append(p.tasks, task{ID: int64(21 + i), Kind: "relay.add", Tag: "r", Data: d})
+	}
+	nbad := len(p.tasks)
 	f := &fakeRunner{}
 	a, done := newTestAgent(t, p, f)
 	defer done()
@@ -481,13 +537,50 @@ func TestBadTasksNeverReachPSM(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs := results(t, p.requests[1]["results"])
-	if len(rs) != 20 {
-		t.Fatalf("%d results, want 20", len(rs))
+	if len(rs) != nbad {
+		t.Fatalf("%d results, want %d", len(rs), nbad)
 	}
 	for _, r := range rs {
 		if r.OK || !strings.HasPrefix(r.Error, "rejected by psm-agent") {
 			t.Errorf("task %d: %+v, want a rejection", r.TaskID, r)
 		}
+	}
+}
+
+// A relay goes to psm whole, as JSON on stdin: a tunnel's entry with the
+// exit's certificate to pin, several fields at once, and a forward in the
+// form the panel sent before relays had engines.
+func TestRelayTasksCarryTheWholeRule(t *testing.T) {
+	entry := `{"tag":"hk","engine":"gost","mode":"tunnel-entry","listen_port":443,"listen_port_auto":true,` +
+		`"port_range":"20000-30000","remote_host":"203.0.113.9","remote_port":8443,` +
+		`"targets":[{"host":"203.0.113.9","port":8443}],"transport":"mwss","tls_sni":"www.example.com",` +
+		`"ws_host":"cdn.example.com","ws_path":"/cdn","secret":"0123456789abcdef","udp":true,` +
+		`"exit_cert_pem":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",` +
+		`"exit_pin":"` + strings.Repeat("ab", 32) + `","speed_mbps":12.5,"limit_bytes":1073741824,"reset_day":0,` +
+		`"expires_at":"2027-01-31T15:59:59Z","strategy":"","probe":false}`
+	old := `{"tag":"jp","listen_port":8443,"remote_host":"127.0.0.1","remote_port":443,"udp":false,"tls":true,"tls_sni":"relay.example.com","tls_insecure":false}`
+	p := &fakePanel{tasks: []task{
+		{ID: 1, Kind: "relay.add", Tag: "hk", Data: json.RawMessage(entry)},
+		{ID: 2, Kind: "relay.update", Tag: "jp", Data: json.RawMessage(old)},
+	}}
+	f := &fakeRunner{stdout: map[string]string{"add": `{"status":"created"}`, "update": `{"status":"updated"}`}}
+	a, done := newTestAgent(t, p, f)
+	defer done()
+	if _, err := a.step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []call{
+		{[]string{"relay", "add", "--input", "-", "--json"}, entry},
+		{[]string{"relay", "update", "jp", "--input", "-", "--json"}, old},
+	}
+	var got []call
+	for _, c := range f.calls {
+		if len(c.args) > 1 && c.args[0] == "relay" && c.args[1] != "probe" {
+			got = append(got, c)
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("psm calls\n got %q\nwant %q", got, want)
 	}
 }
 

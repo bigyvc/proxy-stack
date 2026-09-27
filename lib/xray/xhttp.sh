@@ -11,16 +11,16 @@ XHTTP_DEFAULT_PORT=2024
 # ── Node store ────────────────────────────────────────────────────────────────
 _xhttp_load()         { [[ -f "$XHTTP_CFG" ]] || echo "[]" > "$XHTTP_CFG"; cat "$XHTTP_CFG"; }
 _xhttp_save()         { mkdir -p "$(dirname "$XHTTP_CFG")"; echo "$1" > "$XHTTP_CFG"; }
-_xhttp_get_by_tag()   { _xhttp_load | jq ".[] | select(.tag == \"$1\")" 2>/dev/null; }
+_xhttp_get_by_tag()   { _xhttp_load | jq --arg t "$1" '.[] | select(.tag == $t)' 2>/dev/null; }
 _xhttp_upsert() {
     local n="$1" tag; tag=$(echo "$n" | jq -r '.tag')
     local nodes; nodes=$(_xhttp_load)
-    nodes=$(echo "$nodes" | jq "del(.[] | select(.tag == \"$tag\")) | . += [$n]")
+    nodes=$(echo "$nodes" | jq --arg t "$tag" --argjson n "$n" 'del(.[] | select(.tag == $t)) | . += [$n]')
     _xhttp_save "$nodes"
 }
 _xhttp_delete() {
     local nodes; nodes=$(_xhttp_load)
-    _xhttp_save "$(echo "$nodes" | jq "del(.[] | select(.tag == \"$1\"))")"
+    _xhttp_save "$(echo "$nodes" | jq --arg t "$1" 'del(.[] | select(.tag == $t))')"
 }
 _xhttp_list() {
     _xhttp_load | jq -r '.[] | "\(.tag)\t\(.port)\t\(.listen_addr // "127.0.0.1")\t\(.mode)\t\(.domain // "")"' 2>/dev/null

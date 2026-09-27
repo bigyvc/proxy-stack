@@ -313,7 +313,7 @@ _node_cli_collect() {
 _node_cli_redact() {
     jq -c '
       def secret_key:
-        test("^(password|private_key|psk|uuid|short_id|short_ids|obfs_pass|token|secret|ech_key)$"; "i");
+        test("^(password|private_key|psk|uuid|short_id|short_ids|obfs_pass|token|secret|ech_key|vless_decryption|vless_encryption|stls_password|kcp_seed)$"; "i");
       def redact:
         if type == "object" then
           with_entries(if (.key | secret_key) then .value = "***" else .value |= redact end)

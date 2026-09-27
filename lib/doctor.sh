@@ -22,6 +22,10 @@ _doctor_json_escape() {
     value=${value//$'\n'/\\n}
     value=${value//$'\r'/\\r}
     value=${value//$'\t'/\\t}
+    value=${value//$'\f'/\\f}
+    value=${value//$'\b'/\\b}
+    # any other control character (a colour code, say) has no place in JSON text
+    value=${value//[$'\x01'-$'\x1f']/}
     printf '%s' "$value"
 }
 
@@ -115,9 +119,13 @@ _doctor_check_commands() {
                 "$(t doctor.msg.command_ok "$cmd")" \
                 "$(_doctor_details command "$cmd" path "$(command -v "$cmd")")"
         else
-            local fix=""
+            local fix="" level=critical
             [[ "$cmd" == curl || "$cmd" == jq || "$cmd" == openssl ]] && fix="_doctor_fix_pkg $cmd"
-            _doctor_add "command.${cmd}" "dependency" "critical" \
+            # no service manager (a container without an init): the cores
+            # cannot run as services, which each core's own check reports —
+            # a warning here, as there
+            [[ "$cmd" == systemctl || "$cmd" == rc-service ]] && level=warning
+            _doctor_add "command.${cmd}" "dependency" "$level" \
                 "$(t doctor.msg.command_bad "$cmd")" \
                 "$(_doctor_details command "$cmd" path "")" "$fix"
         fi
@@ -274,9 +282,13 @@ _doctor_check_core() {
     fi
     [[ -n "$active_state" ]] || active_state="inactive"
     if [[ "$load_state" == "not-found" ]]; then
+        # ss-rust's unit is written by its installer alone: --fix cannot make
+        # it, so it is not offered (it would fail every time)
+        local fix="_doctor_fix_core $id"
+        [[ "$id" == ssrust ]] && fix=""
         _doctor_add "core.${id}" "core" "critical" "$(t doctor.msg.service_missing "$label" "$service")" \
             "$(_doctor_details name "$label" binary "$binary" service "$service" config "$config" state "$active_state")" \
-            "_doctor_fix_core $id"
+            "$fix"
     elif [[ "$active_state" == "active" ]]; then
         _doctor_add "core.${id}" "core" "ok" "$(t doctor.msg.service_ok "$label")" \
             "$(_doctor_details name "$label" binary "$binary" service "$service" config "$config" state "$active_state")"
@@ -366,7 +378,9 @@ _doctor_check_certificates() {
         elif ! openssl x509 -in "$cert" -noout -checkend 1209600 &>/dev/null; then
             expiring=$(( expiring + 1 ))
         fi
-    done < <(find "$NGINX_SSL_DIR" -type f \( -name '*.crt' -o -name '*.cer' -o -name '*fullchain*.pem' \) -print 2>/dev/null)
+    # certificates by any of their usual names (cert.pem, fullchain.pem, *.crt…), keys left out
+    done < <(find "$NGINX_SSL_DIR" -type f \( -name '*.crt' -o -name '*.cer' -o -name '*.pem' \) \
+                 -not -iname '*key*' -not -iname '*priv*' -print 2>/dev/null)
 
     local details fix=""
     details=$(_doctor_details directory "$NGINX_SSL_DIR" total "$total" expiring "$expiring" expired "$expired" invalid "$invalid")
@@ -392,11 +406,12 @@ _doctor_check_hop() {
     # `|| true`: under manager.sh's errexit a failed substitution (no iptables
     # at all, exit 127) would end doctor right here
     wanted=$(_hop_wanted || true)
-    rules=$(iptables -t nat -S PREROUTING 2>/dev/null || true)
+    rules=$(iptables -t nat -L PREROUTING -n 2>/dev/null || true)
     while IFS=$'\t' read -r tag _ _; do
         [[ -n "$tag" ]] || continue
         n=$((n + 1))
-        grep -q -- "psm-hop:${tag}\"\?[[:space:]]" <<<"$rules" && have=$((have + 1))
+        # the comment as text: a tag is no pattern
+        awk -v c="/* psm-hop:${tag} */" 'index($0, c) { f = 1 } END { exit !f }' <<<"$rules" && have=$((have + 1))
     done <<<"$wanted"
     if (( n == 0 )); then
         _doctor_add "network.hop" "network" "skipped" "$(t doctor.msg.hop_none)" "$(_doctor_details nodes "0" rules "0")"
@@ -421,16 +436,45 @@ _doctor_check_kcp() {
     while IFS= read -r node; do
         [[ -n "$node" ]] || continue
         n=$((n + 1)); tag=$(jq -r '.tag' <<<"$node")
-        want=$(_xhttp_build_inbound "$node" 2>/dev/null | jq -S -c '.streamSettings')
-        live=$(jq -S -c --arg t "$tag" 'first(.inbounds[]? | select(.tag == $t)) | .streamSettings' "$cfg" 2>/dev/null)
+        # a node that does not build (or a config jq cannot read) counts as
+        # stale: under set -e a failed substitution here ended doctor
+        want=$(_xhttp_build_inbound "$node" 2>/dev/null | jq -S -c '.streamSettings' 2>/dev/null || true)
+        live=$(jq -S -c --arg t "$tag" 'first(.inbounds[]? | select(.tag == $t)) | .streamSettings' "$cfg" 2>/dev/null || true)
         [[ -n "$want" && "$want" == "$live" ]] || stale=$((stale + 1))
     done < <(jq -c '.[] | select(.mode == "mkcp")' "$store" 2>/dev/null)
+    local form; form=$(_xray_kcp_form 2>/dev/null || true)
     if (( stale > 0 )); then
         _doctor_add "xray.kcp" "configuration" "warning" "$(t doctor.msg.kcp_old "$stale" "$n")" \
-            "$(_doctor_details nodes "$n" stale "$stale" xray_form "$(_xray_kcp_form)")" "_doctor_fix_kcp"
+            "$(_doctor_details nodes "$n" stale "$stale" xray_form "$form")" "_doctor_fix_kcp"
     else
         _doctor_add "xray.kcp" "configuration" "ok" "$(t doctor.msg.kcp_ok "$n")" \
-            "$(_doctor_details nodes "$n" stale "0" xray_form "$(_xray_kcp_form)")"
+            "$(_doctor_details nodes "$n" stale "0" xray_form "$form")"
+    fi
+}
+
+# Relays (psm relay): each rule's port has to be listening, or its engine is
+# down (a realm or gost that did not come back, a binary gone). The store is
+# the truth; --fix installs a missing engine and applies its rules again.
+_doctor_check_relays() {
+    local store="$CFG_DIR/realm/rules.json" n down=0 dead="" rule tag port proto
+    [[ -s "$store" ]] || return 0
+    n=$(jq 'length' "$store" 2>/dev/null || echo 0)
+    [[ "$n" =~ ^[1-9][0-9]*$ ]] || return 0
+    source "$LIB_DIR/relay_cli.sh"
+    while IFS= read -r rule; do
+        tag=$(jq -r '.tag' <<<"$rule"); port=$(jq -r '.listen_port' <<<"$rule")
+        proto=$(_relay_proto "$rule")
+        # a relay paused over its quota or past its expiry still listens: the
+        # firewall answers for it
+        _relay_port_bound "$port" "$proto" && continue
+        down=$((down + 1)); dead+="${dead:+ }$tag"
+    done < <(jq -c '.[]' "$store" 2>/dev/null)
+    if (( down > 0 )); then
+        _doctor_add "relay.listen" "network" "warning" "$(t doctor.msg.relay_down "$down" "$n" "$dead")" \
+            "$(_doctor_details relays "$n" down "$down")" "_doctor_fix_relays"
+    else
+        _doctor_add "relay.listen" "network" "ok" "$(t doctor.msg.relay_ok "$n")" \
+            "$(_doctor_details relays "$n" down "0")"
     fi
 }
 
@@ -457,7 +501,11 @@ _doctor_fix_core() {
             svc=mihomo; source "$LIB_DIR/mihomo/core.sh"
             svc_exists mihomo || { _mh_write_service; svc_daemon_reload; svc_enable mihomo; }
             mh_test_restart ;;
-        hysteria2) svc=hysteria-server; svc_exists "$svc" && svc_restart "$svc" ;;
+        hysteria2)
+            svc=hysteria-server
+            # the unit gone (removed by hand): written again, as the module writes it
+            svc_exists "$svc" || { source "$LIB_DIR/hysteria2.sh" && _hy2_write_service && svc_daemon_reload && svc_enable "$svc"; }
+            svc_restart "$svc" ;;
         ssrust)    svc=ss-rust; svc_exists "$svc" && svc_restart "$svc" ;;
         *) return 1 ;;
     esac
@@ -473,6 +521,15 @@ _doctor_fix_boot() { svc_enable "$1" && svc_is_enabled "$1"; }
 _doctor_fix_hop() { source "$LIB_DIR/hop.sh" && psm_hop_sync; }
 
 _doctor_fix_kcp() { source "$LIB_DIR/xray/xhttp.sh" && _xhttp_apply_all; }
+
+_doctor_fix_relays() {
+    source "$LIB_DIR/relay_cli.sh" || return 1
+    _relay_load_realm
+    local e
+    for e in $(_realm_load | jq -r '[.[] | .engine // "realm"] | unique | .[]'); do
+        _relay_ensure_engine "$e" && _relay_engine_apply "$e" || return 1
+    done
+}
 
 # acme.sh decides what is due; a 90-day certificate with under 14 days left is.
 _doctor_fix_cert() {
@@ -556,6 +613,7 @@ _doctor_collect() {
     _doctor_check_certificates
     _doctor_check_hop
     _doctor_check_kcp
+    _doctor_check_relays
     _doctor_check_tun
 }
 

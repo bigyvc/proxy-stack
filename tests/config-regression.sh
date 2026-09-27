@@ -46,6 +46,7 @@ source "$PSM_ROOT/lib/mihomo/tuic.sh"
 source "$PSM_ROOT/lib/singbox/wireguard.sh"
 source "$PSM_ROOT/lib/mihomo/ss2022.sh"
 source "$PSM_ROOT/lib/mihomo/snell.sh"
+source "$PSM_ROOT/lib/gost.sh"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -254,5 +255,24 @@ assert_snapshot mihomo-vless-enc mihomo_vless_enc _mh_vless_build_listener
 # handshake.dest（host:port）；snell 上它与 obfs-opts 互斥，快照钉住只出现 shadow-tls。
 assert_snapshot mihomo-ss-stls    mihomo_ss_stls    _mh_ss_build_listener
 assert_snapshot mihomo-snell-stls mihomo_snell_stls _mh_snell_build_listener
+
+# Relays (psm relay): one store, two engines. gost's config carries its rules
+# only — forwards with their selector (and TCP probes when there is more than
+# one target and the probe is not turned off), a rate limit in bytes a second,
+# the tunnel's exit (relay handler with a password, its own targets, the
+# transport's path) and entry (one chain, without nodelay, which loses the
+# client's data; the exit's certificate pinned, skipped, or verified by name). realm's takes the realm
+# rules: extra targets as extra_remotes with a balance, the old TLS hop.
+_relay_gost_config() { gost_gen_config "$1"; }
+_relay_realm_toml() {
+    local store="$REALM_STORE" toml="$REALM_TOML" dir="$REALM_CFG_DIR"
+    REALM_STORE="$tmp_dir/relay-rules.json"; REALM_CFG_DIR="$tmp_dir/realm"; REALM_TOML="$REALM_CFG_DIR/config.toml"
+    printf '%s\n' "$1" > "$REALM_STORE"
+    _realm_gen_toml
+    grep -v '^#' "$REALM_TOML" | jq -R -s 'split("\n")'
+    REALM_STORE="$store"; REALM_TOML="$toml"; REALM_CFG_DIR="$dir"
+}
+assert_snapshot relay-gost  relay_rules _relay_gost_config
+assert_snapshot relay-realm relay_rules _relay_realm_toml
 
 echo "config regression: $passed snapshots passed"

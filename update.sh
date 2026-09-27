@@ -14,10 +14,16 @@ CURRENT_VERSION=$(cat "$PSM_VERSION_FILE" 2>/dev/null || echo "dev")
 psm_check_version() {
     log_info "$(t update.current_ver "$CURRENT_VERSION")"
     if [[ -d "$PSM_ROOT/.git" ]]; then
-        local behind
-        behind=$(timeout 10 git -C "$PSM_ROOT" fetch --dry-run 2>&1 | wc -l)
-        (( behind > 0 )) && log_info "$(t update.available)" \
-                         || log_info "$(t update.uptodate)"
+        # compare with the remote branch: fetch --dry-run's output (errors
+        # included, as it was counted) said "update available" when offline
+        if timeout 20 git -C "$PSM_ROOT" fetch -q 2>/dev/null; then
+            local behind
+            behind=$(git -C "$PSM_ROOT" rev-list --count 'HEAD..@{upstream}' 2>/dev/null || echo 0)
+            (( behind > 0 )) && log_info "$(t update.available)" \
+                             || log_info "$(t update.uptodate)"
+        else
+            log_warn "$(t update.check_failed)"
+        fi
     else
         log_info "$(t update.not_git)"
     fi
@@ -30,8 +36,8 @@ psm_update_scripts() {
 
     log_step "$(t update.pulling)"
     if [[ -d "$PSM_ROOT/.git" ]]; then
-        # User data lives in /etc/psm/, not in the repo, so local script edits are
-        # reverted — but saved as a patch first instead of being thrown away.
+        # PSM's state (config/, backup/, logs/) is ignored by git (.gitignore), so
+        # only edits to the scripts are reverted — saved as a patch first.
         # The chmod +x below is not a local change: ignore file modes.
         git -C "$PSM_ROOT" config core.fileMode false 2>/dev/null || true
         if ! git -C "$PSM_ROOT" diff --quiet HEAD -- 2>/dev/null; then
@@ -90,13 +96,32 @@ psm_update_nginx() {
     nginx_upgrade
 }
 
+# The rule data Xray routes by. Each file is checked against the .sha256sum
+# the release publishes next to it before it replaces the one in use; a
+# download that fails or does not match leaves the old one (and a failure no
+# longer ends the whole update, nor does a missing Xray directory).
 psm_update_geofiles() {
     log_step "$(t update.geo)"
     local base="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
-    curl "${PSM_DL[@]}" -fsSL "$base/geoip.dat"   -o /usr/local/share/xray/geoip.dat
-    curl "${PSM_DL[@]}" -fsSL "$base/geosite.dat" -o /usr/local/share/xray/geosite.dat
-    log_ok "$(t update.geo_done)"
+    local dir=/usr/local/share/xray f tmp want got ok=1
+    mkdir -p "$dir"
+    tmp=$(mktemp -d) || return 1
+    for f in geoip.dat geosite.dat; do
+        if curl "${PSM_DL[@]}" -fsSL "$base/$f" -o "$tmp/$f" \
+            && curl "${PSM_DL[@]}" -fsSL "$base/$f.sha256sum" -o "$tmp/$f.sha256sum"; then
+            want=$(awk '{ print $1; exit }' "$tmp/$f.sha256sum")
+            got=$(sha256sum "$tmp/$f" | awk '{ print $1 }')
+            if [[ -n "$want" && "$want" == "$got" ]]; then
+                install -m 644 "$tmp/$f" "$dir/$f"
+                continue
+            fi
+        fi
+        ok=0; log_warn "$(t update.geo_failed "$f")"
+    done
+    rm -rf "$tmp"
+    (( ok )) && log_ok "$(t update.geo_done)"
     svc_restart xray 2>/dev/null || true
+    return 0
 }
 
 # shellcheck disable=SC2120  # optional target; the menu calls it without one

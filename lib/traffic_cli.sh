@@ -7,8 +7,9 @@
 #   psm traffic reset TAG [--json]
 #   psm traffic unset TAG [--json]
 #
-# TAG is a node's tag, or snell / ss2022 for the standalone servers, as in the
-# traffic menu (which keeps working on the same state). A limit of 0 meters a
+# TAG is a node's tag, snell / ss2022 for the standalone servers, as in the
+# traffic menu (which keeps working on the same state), or relay-<TAG> for a
+# relay (psm relay --limit-gb sets the same thing). A limit of 0 meters a
 # node without limiting it. The periodic check, installed with the first
 # `set`, pauses a node that goes over its limit until the monthly reset (on
 # the reset day) or `psm traffic reset`.
@@ -45,6 +46,11 @@ _trf_cli_entry() { jq -c --arg t "$1" ".[\$t] | $_TRF_CLI_ENTRY" "$TRAFFIC_STATE
 _trf_cli_locate() {
     local tag="$1" item core n port cport laddr
     case "$tag" in
+        relay-*)
+            # a relay (psm relay): metered on its listening port
+            port=$(jq -r --arg t "${tag#relay-}" '.[] | select(.tag == $t) | .listen_port' "$CFG_DIR/realm/rules.json" 2>/dev/null || true)
+            if [[ -n "$port" ]]; then printf '%s\tiptables\t%s\t\n' "$port" "$port"; return 0; fi
+            return 1 ;;
         snell)
             if [[ -f /etc/snell/users/snell-main.conf ]]; then
                 port=$(awk -F: '/^listen/ { gsub(/[^0-9]/, "", $NF); print $NF; exit }' /etc/snell/users/snell-main.conf || true)
@@ -108,6 +114,7 @@ _trf_cli_set() {
     limit="${limit:-0}"
     [[ "$limit" =~ ^[0-9]+$ ]] || { _trf_cli_err '--limit-bytes: a whole number'; return 2; }
     [[ $EUID -eq 0 ]] || { _trf_cli_err 'run as root'; return 1; }
+    _trf_lock
 
     local loc port source cport iface
     loc=$(_trf_cli_locate "$tag") || { _trf_cli_err "no node or standalone server named $tag"; return 1; }
@@ -153,6 +160,7 @@ _trf_cli_reset() {
     local tag="${1:-}" json=0 source cur=0 tmp
     [[ "${2:-}" == --json ]] && json=1
     [[ $EUID -eq 0 ]] || { _trf_cli_err 'run as root'; return 1; }
+    _trf_lock
     _trf_init
     jq -e --arg t "$tag" '.[$t] != null' "$TRAFFIC_STATE" >/dev/null 2>&1 \
         || { _trf_cli_err "$tag is not metered"; return 1; }
@@ -163,7 +171,7 @@ _trf_cli_reset() {
         iptables) cur=$(_trf_ipt_query_bytes "$tag" 2>/dev/null || echo 0) ;;
     esac
     cur=$(_trf_to_int "$cur")
-    tmp=$(mktemp)
+    tmp=$(_trf_tmp)
     jq --arg t "$tag" --argjson cb "$cur" \
         '.[$t].accumulated_bytes = 0 | .[$t].checkpoint_bytes = $cb | .[$t].warned90 = false
          | .[$t].paused = false | .[$t].paused_at = null' "$TRAFFIC_STATE" > "$tmp" && mv "$tmp" "$TRAFFIC_STATE"
@@ -175,6 +183,7 @@ _trf_cli_unset() {
     local tag="${1:-}" json=0
     [[ "${2:-}" == --json ]] && json=1
     [[ $EUID -eq 0 ]] || { _trf_cli_err 'run as root'; return 1; }
+    _trf_lock
     _trf_init
     if jq -e --arg t "$tag" '.[$t] != null' "$TRAFFIC_STATE" >/dev/null 2>&1; then
         _trf_cleanup_node "$tag" >&2
