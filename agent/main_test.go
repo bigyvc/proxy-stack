@@ -231,6 +231,37 @@ func TestSniCheckSendsOnlyNamesAndHostPorts(t *testing.T) {
 	}
 }
 
+func TestCheckRunsPSMCheck(t *testing.T) {
+	report := `{"version":"0.1.0","ipv4":{"ip":"203.0.113.5","services":[]},"ipv6":null}`
+	p := &fakePanel{tasks: []task{
+		{ID: 1, Kind: "check.run"},
+		{ID: 2, Kind: "check.run", Data: json.RawMessage(`{"family":"6"}`)},
+		{ID: 3, Kind: "check.run", Data: json.RawMessage(`{"family":"--lang"}`)},
+		{ID: 4, Kind: "check.run", Data: json.RawMessage(`[1]`)},
+		{ID: 5, Kind: "check.run", Data: json.RawMessage(`{"keys":{"ipqs":"k-ipqs-0123456789","abuseipdb":"k-abuse-0123456789","other":"x"}}`)},
+		{ID: 6, Kind: "check.run", Data: json.RawMessage(`{"keys":{"ipqs":"bad key\nIPQS=x"}}`)},
+	}}
+	f := &fakeRunner{stdout: map[string]string{"all": report}}
+	a, done := newTestAgent(t, p, f)
+	defer done()
+
+	if _, err := a.step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []call{{[]string{"check", "all", "--json"}, ""}, {[]string{"check", "all", "--json", "-6"}, ""},
+		{[]string{"check", "all", "--json", "--keys-stdin"}, "ABUSEIPDB=k-abuse-0123456789\nIPQS=k-ipqs-0123456789\n"}}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Fatalf("psm calls\n got %q\nwant %q (a family that is not 4 or 6, data that is not an object, or a key with more in it never reach psm; keys go on stdin only)", f.calls, want)
+	}
+	if _, err := a.step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rs := results(t, p.requests[len(p.requests)-1]["results"])
+	if len(rs) != 6 || !rs[0].OK || string(rs[0].Output) != report || rs[2].OK || rs[3].OK || !rs[4].OK || rs[5].OK {
+		t.Fatalf("results: %+v", rs)
+	}
+}
+
 func TestSyncRunsTasksAndReportsResults(t *testing.T) {
 	p := &fakePanel{tasks: []task{
 		{ID: 1, Kind: "node.add", Core: "xray", Protocol: "reality", Data: json.RawMessage(`{"tag":"hk","port":443,"server_name":"a.example"}`), Server: "203.0.113.10", Format: "uri"},

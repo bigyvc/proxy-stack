@@ -11,7 +11,9 @@
 // Tasks: node.add (installing the core first when the server has never run
 // it), node.update, node.delete, node.export, standalone.install and
 // standalone.remove (Snell / ss-rust), traffic.set, traffic.reset,
-// traffic.report (send the counters with the next sync), status, agent.update
+// traffic.report (send the counters with the next sync), status, check.run
+// (psm check: the server's IP from outside, and which services let it in),
+// agent.update
 // (the panel asks for a newer psm-agent: report, then run psm agent upgrade
 // detached) and agent.leave (the server was removed from the panel: delete the
 // panel's nodes, report, then uninstall psm-agent itself).
@@ -43,11 +45,12 @@ import (
 	"time"
 )
 
-const agentVersion = "0.11.0"
+const agentVersion = "0.12.0"
 
 const (
 	commandTimeout  = 120 * time.Second // one psm command
 	sniTimeout      = 5 * time.Minute   // a mapping-engine search and its TLS checks
+	checkTimeout    = 3 * time.Minute   // psm check: fetching ipcheck, then its requests
 	installTimeout  = 15 * time.Minute  // installing a core or a standalone server
 	requestTimeout  = 30 * time.Second  // one request to the panel
 	maxTaskData     = 64 << 10          // a task's node settings
@@ -71,6 +74,9 @@ var protocols = map[string]bool{
 
 // the standalone servers (`psm standalone`)
 var standalones = map[string]bool{"snell": true, "ss2022": true}
+
+// an API key psm check passes on (letters, digits, - and _)
+var checkKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 
 // the cyberspace-mapping engines psm sni find knows
 var sniEngines = map[string]bool{"netlas": true, "quake": true, "zoomeye": true, "fofa": true}
@@ -922,6 +928,48 @@ func (a *agent) execute(ctx context.Context, t task) result {
 		// result, the way agent.leave's uninstall is.
 		r.OK, r.Output = true, json.RawMessage(`{"from":"`+agentVersion+`"}`)
 		a.upgrading = true
+	case "check.run":
+		// The IP's owner, registry, kind and risk, mail and blacklists, and
+		// which streaming and AI services let it in: all of it, or one address
+		// family. The optional API keys travel on stdin only.
+		var q struct {
+			Family string            `json:"family"`
+			Keys   map[string]string `json:"keys"`
+		}
+		if len(t.Data) > 0 && json.Unmarshal(t.Data, &q) != nil {
+			return rejected(t, "check.run: bad data")
+		}
+		args := []string{"check", "all", "--json"}
+		switch q.Family {
+		case "":
+		case "4", "6":
+			args = append(args, "-"+q.Family)
+		default:
+			return rejected(t, "check.run: family is 4 or 6")
+		}
+		var stdin []byte
+		if len(q.Keys) > 0 {
+			var lines []string
+			for _, name := range []string{"abuseipdb", "ipqs", "ip2location"} {
+				k, ok := q.Keys[name]
+				if !ok || k == "" {
+					continue
+				}
+				if !checkKeyRe.MatchString(k) {
+					return rejected(t, "check.run: the "+name+" key is not a key")
+				}
+				lines = append(lines, strings.ToUpper(name)+"="+k)
+			}
+			if len(lines) > 0 {
+				args = append(args, "--keys-stdin")
+				stdin = []byte(strings.Join(lines, "\n") + "\n")
+			}
+		}
+		out, err := a.psmFor(ctx, checkTimeout, stdin, args...)
+		if err != nil {
+			return fail(err)
+		}
+		r.OK, r.Output = true, jsonOrNil(out)
 	case "traffic.report": // the panel's 流量 page asks for the counters now
 		a.lastTraffic = time.Time{}
 		r.OK = true

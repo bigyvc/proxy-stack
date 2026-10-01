@@ -78,6 +78,12 @@ case "${1:-}" in
         psm_relay_cli "$@"
         exit $?
         ;;
+    check)
+        shift
+        source "$LIB_DIR/check_cli.sh"
+        psm_check_cli "$@"
+        exit $?
+        ;;
     version|--version)
         psm_version
         exit 0
@@ -104,6 +110,10 @@ Usage:
                               Relays (realm or gost): forward a port to other servers,
                               balance and fail over between them, tunnel to an exit
                               machine over TLS / WSS, with rate limits, quotas and expiry
+  psm check [all|ip|mail|unlock] [-4|-6] [--keys-stdin] [--json]
+                              This server's IP from outside: owner, native or broadcast,
+                              kind, risk scores, mail and blacklists, and which streaming
+                              and AI services let it in (jinqians/ipcheck, fetched when it runs)
   psm version                 The PSM version (date and commit)
   psm migrate export|import|push [...]
                               Move this server to another host (psm migrate --help)
