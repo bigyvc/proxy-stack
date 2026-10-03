@@ -30,7 +30,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src:ro" debian:13 bash -c '
             set -e
-            apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck jq openssl python3 >/dev/null
+            apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck jq openssl python3 git curl ca-certificates >/dev/null
             cp -a /src /w && cd /w && bash scripts/ci.sh'
 
   psm-agent:
