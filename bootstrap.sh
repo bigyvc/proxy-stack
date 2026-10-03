@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# bootstrap.sh — JQ's PSM one-liner installer / updater
+# bootstrap.sh — Dayv's PSM one-liner installer / updater
 #
 # First install:
-#   bash <(curl -fsSL https://psm.jinqians.com)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh)
 #
 # Re-run to update:
 #   same command — detects existing install and does git pull only
 #
 # Alpine (no bash out of the box):
-#   wget -qO- https://psm.jinqians.com | sh
+#   wget -qO- https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh | sh
 
 # ── POSIX shim: get onto bash first ───────────────────────────────────────────
 # Everything below this block is bash. This block alone is plain POSIX sh, so
@@ -29,7 +29,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
     esac
     PSM_BOOTSTRAP_TMP="$(mktemp)" || exit 1
     export PSM_BOOTSTRAP_TMP
-    curl --retry 5 --connect-timeout 15 -fsSL "${PSM_BOOTSTRAP_URL:-https://psm.jinqians.com}" -o "$PSM_BOOTSTRAP_TMP" \
+    curl --retry 5 --connect-timeout 15 -fsSL "${PSM_BOOTSTRAP_URL:-https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh}" -o "$PSM_BOOTSTRAP_TMP" \
         || { rm -f "$PSM_BOOTSTRAP_TMP"; exit 1; }
     if (: </dev/tty) 2>/dev/null; then
         exec bash "$PSM_BOOTSTRAP_TMP" "$@" </dev/tty
@@ -42,7 +42,7 @@ fi
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
-PSM_REPO="${PSM_REPO:-https://github.com/jinqians/proxy-stack.git}"
+PSM_REPO="${PSM_REPO:-https://github.com/bigyvc/proxy-stack.git}"
 PSM_BRANCH="${PSM_BRANCH:-main}"
 PSM_DIR="/opt/psm"
 
@@ -85,11 +85,11 @@ export PSM_LANG="${PSM_LANG:-$_bt_lang}"
 
 banner() {
     local BC='\033[96m' BB='\033[94m' WH='\033[97m' DM='\033[2m'
-    local L1='     _    ___          ____    ____    __  __ '
-    local L2='    | |  / _ \        |  _ \  / ___| |  \/  |'
-    local L3=" _  | | | | | |       | |_) | \___ \ | |\/| |"
-    local L4='| |_| | | |_| |       |  __/   ___) | | |  | |'
-    local L5=' \___/   \__\_|       |_|     |____/ |_|  |_|'
+    local L1=' ____    ____    __  __ '
+    local L2='|  _ \  / ___| | \/  |'
+    local L3='| |_) | \___ \ | |\/| |'
+    local L4='|  __/   ___) | | |  | |'
+    local L5='|_|     |____/  |_|  |_|'
     echo ""
     printf "  ${BOLD}${BC}%s${NC}\n"  "$L1"
     printf "  ${BOLD}${BC}%s${NC}\n"  "$L2"
@@ -97,7 +97,7 @@ banner() {
     printf "  ${BOLD}${BB}%s${NC}\n"  "$L4"
     printf "  ${BOLD}${BC}%s${NC}\n"  "$L5"
     printf "\n"
-    printf "  ${BOLD}${WH}Proxy Stack Manager${NC}  ${DM}·····${NC}  ${YELLOW}◆ jinqians.com${NC}\n"
+    printf "  ${BOLD}${WH}Dayv Proxy Stack Manager${NC}  ${DM}·····${NC}  ${YELLOW}◆ https://github.com/bigyvc/proxy-stack${NC}\n"
     echo ""
 }
 
@@ -178,6 +178,20 @@ if [[ -d "$PSM_DIR/.git" ]]; then
     # 整次更新直接中止 —— 先把改动存成补丁（不丢），再还原到 HEAD。未跟踪文件不动。
     # 安装/更新都会 chmod +x 脚本，仓库里记为 100644 的文件因此显示为"已修改"，
     # 上游一改到它们 pull 就失败。权限不算本地修改：关掉 core.fileMode。
+    # Explicitly running this installer selects this fork's origin and branch.
+    psm_current_branch=$(git -C "$PSM_DIR" symbolic-ref --short HEAD 2>/dev/null || true)
+    [[ "$psm_current_branch" == "$PSM_BRANCH" ]] || die "Expected branch ${PSM_BRANCH}, found ${psm_current_branch:-detached HEAD}; switch branches before updating."
+    psm_old_origin=$(git -C "$PSM_DIR" remote get-url origin 2>/dev/null || true)
+    if [[ "$psm_old_origin" != "$PSM_REPO" ]]; then
+        log_warn "$(bt "更新来源切换到 ${PSM_REPO}" "Switching update source to ${PSM_REPO}")"
+        if [[ -n "$psm_old_origin" ]]; then
+            git -C "$PSM_DIR" remote set-url origin "$PSM_REPO"
+        else
+            git -C "$PSM_DIR" remote add origin "$PSM_REPO"
+        fi
+    fi
+    git -C "$PSM_DIR" config "branch.${PSM_BRANCH}.remote" origin
+    git -C "$PSM_DIR" config "branch.${PSM_BRANCH}.merge" "refs/heads/${PSM_BRANCH}"
     git -C "$PSM_DIR" config core.fileMode false
     if ! git -C "$PSM_DIR" diff --quiet HEAD -- 2>/dev/null; then
         psm_patch="${HOME:-/root}/psm-local-changes-$(date +%Y%m%d%H%M%S).patch"

@@ -89,6 +89,7 @@ run_var_boundaries() {
 run_tests() {
     section "config regression"
     bash tests/run.sh
+    python3 tests/fork-source.py
 }
 
 case "${1:-all}" in

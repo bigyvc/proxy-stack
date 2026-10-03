@@ -18,7 +18,7 @@ MSG[common.press_enter]="按回车继续..."
 MSG[i18n.unsupported]="不支持的语言：%s"
 
 # ── 主菜单 ────────────────────────────────────────────────────────────────────
-MSG[menu.main.title]="JQ's Proxy Stack Manager"
+MSG[menu.main.title]="Dayv's Proxy Stack Manager"
 MSG[menu.main.system]="系统管理"
 MSG[menu.main.nginx]="Nginx 管理"
 MSG[menu.main.xray]="Xray 管理"

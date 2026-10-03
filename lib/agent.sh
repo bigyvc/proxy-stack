@@ -21,7 +21,7 @@ PSM_AGENT_CFG="/etc/psm/agent.json"
 PSM_AGENT_SERVICE="psm-agent"
 PSM_AGENT_UNIT="/etc/systemd/system/psm-agent.service"
 # tests point these at a local copy of the release and an http:// panel
-PSM_AGENT_BASE_URL="${PSM_AGENT_BASE_URL:-https://github.com/jinqians/proxy-stack/releases/download/agent-v${PSM_AGENT_VERSION}}"
+PSM_AGENT_BASE_URL="${PSM_AGENT_BASE_URL:-https://github.com/bigyvc/proxy-stack/releases/download/agent-v${PSM_AGENT_VERSION}}"
 
 _agent_err() { printf 'psm agent: %s\n' "$*" >&2; }
 

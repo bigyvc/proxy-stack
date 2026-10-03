@@ -1,0 +1,1658 @@
+{
+  "scope": "Literal URL templates in delivered source and docs; not a runtime traffic log.",
+  "urls": [
+    {
+      "url": "http://${bind}:${port}${NC}",
+      "locations": [
+        {
+          "file": "lib/docker.sh",
+          "line": 335
+        },
+        {
+          "file": "lib/docker.sh",
+          "line": 380
+        }
+      ]
+    },
+    {
+      "url": "http://${new_upstream};|",
+      "locations": [
+        {
+          "file": "lib/nginx.sh",
+          "line": 777
+        }
+      ]
+    },
+    {
+      "url": "http://${proxy_pass};",
+      "locations": [
+        {
+          "file": "lib/nginx.sh",
+          "line": 586
+        }
+      ]
+    },
+    {
+      "url": "http://${target}",
+      "locations": [
+        {
+          "file": "lib/cloudflare/tunnel.sh",
+          "line": 125
+        }
+      ]
+    },
+    {
+      "url": "http://127.0.0.1:18080",
+      "locations": [
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 264
+        }
+      ]
+    },
+    {
+      "url": "http://127.0.0.1:8765",
+      "locations": [
+        {
+          "file": "tests/integration/retry.sh",
+          "line": 67
+        }
+      ]
+    },
+    {
+      "url": "http://127.0.0.1:8765/warmup",
+      "locations": [
+        {
+          "file": "tests/integration/retry.sh",
+          "line": 66
+        }
+      ]
+    },
+    {
+      "url": "http://archive.debian.org/debian",
+      "locations": [
+        {
+          "file": "tests/integration/container.sh",
+          "line": 64
+        }
+      ]
+    },
+    {
+      "url": "http://archive.debian.org/debian-security",
+      "locations": [
+        {
+          "file": "tests/integration/container.sh",
+          "line": 64
+        }
+      ]
+    },
+    {
+      "url": "http://ip-api.com/batch",
+      "locations": [
+        {
+          "file": "lib/vpngate/core.sh",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "url": "http://ip-api.com/json/${ip}?fields=as,countryCode",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 86
+        }
+      ]
+    },
+    {
+      "url": "http://ip-api.com/json/?fields=${VG_IPAPI_FIELDS}",
+      "locations": [
+        {
+          "file": "lib/vpngate/tunnel.sh",
+          "line": 208
+        }
+      ]
+    },
+    {
+      "url": "http://psm.example.com",
+      "locations": [
+        {
+          "file": "agent/main_test.go",
+          "line": 183
+        }
+      ]
+    },
+    {
+      "url": "http://www.gstatic.com/generate_204",
+      "locations": [
+        {
+          "file": "lib/subscribe.sh",
+          "line": 429
+        }
+      ]
+    },
+    {
+      "url": "http://www.vpngate.net/api/iphone/",
+      "locations": [
+        {
+          "file": "lib/vpngate/core.sh",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "url": "http://www.w3.org/2000/svg",
+      "locations": [
+        {
+          "file": ".github/assets/banner.svg",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "url": "http://{{UPSTREAM}};",
+      "locations": [
+        {
+          "file": "templates/nginx/site-https.conf.tpl",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "url": "https://$h/",
+      "locations": [
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 256
+        }
+      ]
+    },
+    {
+      "url": "https://$host$request_uri;",
+      "locations": [
+        {
+          "file": "templates/nginx/site-https.conf.tpl",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "url": "https://${domain}",
+      "locations": [
+        {
+          "file": "lib/hysteria2.sh",
+          "line": 94
+        }
+      ]
+    },
+    {
+      "url": "https://${domain}/${SUB_URL_PREFIX}/${token}",
+      "locations": [
+        {
+          "file": "lib/subscribe.sh",
+          "line": 507
+        },
+        {
+          "file": "lib/subscribe.sh",
+          "line": 549
+        }
+      ]
+    },
+    {
+      "url": "https://${domain}/${SUB_URL_PREFIX}/${tok}/sub.txt",
+      "locations": [
+        {
+          "file": "lib/subscribe.sh",
+          "line": 589
+        }
+      ]
+    },
+    {
+      "url": "https://${sni}/",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 1177
+        }
+      ]
+    },
+    {
+      "url": "https://%s",
+      "locations": [
+        {
+          "file": "lang/en/cloudflare.sh",
+          "line": 76
+        },
+        {
+          "file": "lang/en/cloudflare.sh",
+          "line": 107
+        },
+        {
+          "file": "lang/ko/cloudflare.sh",
+          "line": 107
+        },
+        {
+          "file": "lang/ru/cloudflare.sh",
+          "line": 76
+        },
+        {
+          "file": "lang/ru/cloudflare.sh",
+          "line": 107
+        },
+        {
+          "file": "lang/zh/cloudflare.sh",
+          "line": 76
+        },
+        {
+          "file": "lang/zh/cloudflare.sh",
+          "line": 107
+        }
+      ]
+    },
+    {
+      "url": "https://%s/psm-sub/%s/sub.txt",
+      "locations": [
+        {
+          "file": "lib/users.sh",
+          "line": 289
+        }
+      ]
+    },
+    {
+      "url": "https://%s를",
+      "locations": [
+        {
+          "file": "lang/ko/cloudflare.sh",
+          "line": 76
+        }
+      ]
+    },
+    {
+      "url": "https://*",
+      "locations": [
+        {
+          "file": "lib/ruleset/core.sh",
+          "line": 86
+        },
+        {
+          "file": "tests/fork-source.py",
+          "line": 58
+        }
+      ]
+    },
+    {
+      "url": "https://1.1.1.1/cdn-cgi/trace",
+      "locations": [
+        {
+          "file": "lib/vpngate/tunnel.sh",
+          "line": 216
+        },
+        {
+          "file": "lib/warp_probe.sh",
+          "line": 10
+        },
+        {
+          "file": "lib/warp_probe.sh",
+          "line": 19
+        },
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 175
+        },
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 234
+        }
+      ]
+    },
+    {
+      "url": "https://IP.Check.Place",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 183
+        }
+      ]
+    },
+    {
+      "url": "https://[2606:4700:4700::1111]/cdn-cgi/trace",
+      "locations": [
+        {
+          "file": "lib/warp_probe.sh",
+          "line": 11
+        },
+        {
+          "file": "lib/warp_probe.sh",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "url": "https://api.bgpview.io/ip/${ip}",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 101
+        }
+      ]
+    },
+    {
+      "url": "https://api.cloudflare.com/client/v4",
+      "locations": [
+        {
+          "file": "lib/cloudflare.sh",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "url": "https://api.cloudflareclient.com/v0a2158/reg",
+      "locations": [
+        {
+          "file": "lib/xray/warp.sh",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "url": "https://api.github.com/repos/$1/releases/latest",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 259
+        }
+      ]
+    },
+    {
+      "url": "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20",
+      "locations": [
+        {
+          "file": "lib/singbox/core.sh",
+          "line": 42
+        }
+      ]
+    },
+    {
+      "url": "https://api.github.com/repos/XTLS/Xray-core/releases?per_page=20",
+      "locations": [
+        {
+          "file": "lib/xray/core.sh",
+          "line": 75
+        }
+      ]
+    },
+    {
+      "url": "https://api.ipify.org",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 367
+        }
+      ]
+    },
+    {
+      "url": "https://api.telegram.org/bot",
+      "locations": [
+        {
+          "file": "lib/tg_bot.sh",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "url": "https://api.telegram.org/bot${_TG_NOTIFY_TOKEN}/sendMessage",
+      "locations": [
+        {
+          "file": "lib/tgbot/notify.sh",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "url": "https://api.zoomeye.ai/resources-info",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 144
+        }
+      ]
+    },
+    {
+      "url": "https://api.zoomeye.ai/v2/search",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 252
+        }
+      ]
+    },
+    {
+      "url": "https://api6.ipify.org",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 373
+        }
+      ]
+    },
+    {
+      "url": "https://app.netlas.io}/api/responses/",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 191
+        }
+      ]
+    },
+    {
+      "url": "https://app.netlas.io}/api/users/current/",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 134
+        }
+      ]
+    },
+    {
+      "url": "https://bench.sh",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 164
+        }
+      ]
+    },
+    {
+      "url": "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${rhel_ver}.noarch.rpm",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 168
+        },
+        {
+          "file": "lib/common.sh",
+          "line": 173
+        },
+        {
+          "file": "lib/common.sh",
+          "line": 179
+        }
+      ]
+    },
+    {
+      "url": "https://dl.nssurge.com/snell/snell-server-${build}-linux-${zarch}.zip",
+      "locations": [
+        {
+          "file": "lib/standalone_cli.sh",
+          "line": 133
+        }
+      ]
+    },
+    {
+      "url": "https://dl.nssurge.com/snell/snell-server-${ver}-linux-${zarch}.zip",
+      "locations": [
+        {
+          "file": "lib/snell.sh",
+          "line": 97
+        }
+      ]
+    },
+    {
+      "url": "https://download.docker.com/linux/${repo_os}/docker-ce.repo",
+      "locations": [
+        {
+          "file": "lib/docker.sh",
+          "line": 111
+        }
+      ]
+    },
+    {
+      "url": "https://fofa.info/api/v1/info/my?key=${PSM_SNI_KEY:-$(state_get",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 149
+        }
+      ]
+    },
+    {
+      "url": "https://fofa.info/api/v1/search/all",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 285
+        }
+      ]
+    },
+    {
+      "url": "https://fsf.org/",
+      "locations": [
+        {
+          "file": "LICENSE",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "url": "https://get.acme.sh",
+      "locations": [
+        {
+          "file": "lib/cert.sh",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "url": "https://get.docker.com",
+      "locations": [
+        {
+          "file": "lib/docker.sh",
+          "line": 125
+        }
+      ]
+    },
+    {
+      "url": "https://github.com",
+      "locations": [
+        {
+          "file": "tests/integration/retry.sh",
+          "line": 58
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/$1/releases/latest",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 255
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/.../download/[步骤]",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 55
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download",
+      "locations": [
+        {
+          "file": "update.sh",
+          "line": 105
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/MetaCubeX/mihomo/releases",
+      "locations": [
+        {
+          "file": "lib/mihomo/core.sh",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO}/mihomo-linux-amd64-compatible-${MIHOMO}.gz",
+      "locations": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 81
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/SagerNet/sing-box/releases",
+      "locations": [
+        {
+          "file": "lib/singbox/core.sh",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/SagerNet/sing-box/releases/download/v${v}/sing-box-${v}-linux-amd64.tar.gz",
+      "locations": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 78
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.2/sing-box-1.14.2-linux-amd64.tar.gz",
+      "locations": [
+        {
+          "file": "tests/integration/relay.sh",
+          "line": 85
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/XTLS/Xray-core/releases",
+      "locations": [
+        {
+          "file": "lib/xray/core.sh",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/XTLS/Xray-core/releases/download/${tag}/Xray-linux-64.zip",
+      "locations": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/XTLS/Xray-core/releases/download/v25.12.8/Xray-linux-64.zip",
+      "locations": [
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 362
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/XTLS/Xray-core/releases/download/v26.9.9/Xray-linux-64.zip",
+      "locations": [
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 152
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/acmesh-official/acme.sh/archive/refs/tags/${ACME_VERSION}.tar.gz",
+      "locations": [
+        {
+          "file": "lib/cert.sh",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/apernet/hysteria/releases",
+      "locations": [
+        {
+          "file": "lib/hysteria2.sh",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack",
+      "locations": [
+        {
+          "file": "AUDIT.md",
+          "line": 3
+        },
+        {
+          "file": "FORK_GUIDE.md",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack${NC}\\n",
+      "locations": [
+        {
+          "file": "bootstrap.sh",
+          "line": 100
+        },
+        {
+          "file": "install.sh",
+          "line": 28
+        },
+        {
+          "file": "manager.sh",
+          "line": 319
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack.git",
+      "locations": [
+        {
+          "file": "FORK_GUIDE.md",
+          "line": 22
+        },
+        {
+          "file": "FORK_GUIDE.md",
+          "line": 51
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack.git}",
+      "locations": [
+        {
+          "file": "bootstrap.sh",
+          "line": 45
+        },
+        {
+          "file": "tests/fork-source.py",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack/actions/workflows/ci.yml",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 11
+        },
+        {
+          "file": "README_EN.md",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack/actions/workflows/ci.yml/badge.svg?branch=main",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 11
+        },
+        {
+          "file": "README_EN.md",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack/issues",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 28
+        },
+        {
+          "file": "README_EN.md",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/bigyvc/proxy-stack/releases/download/agent-v${PSM_AGENT_VERSION}}",
+      "locations": [
+        {
+          "file": "lib/agent.sh",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cf_arch}",
+      "locations": [
+        {
+          "file": "lib/cloudflare/tunnel.sh",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${arch}",
+      "locations": [
+        {
+          "file": "lib/docker.sh",
+          "line": 163
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/go-gost/gost/releases",
+      "locations": [
+        {
+          "file": "lib/gost.sh",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/jinqians/ipcheck/releases/download/v${PSM_IPCHECK_VERSION}}",
+      "locations": [
+        {
+          "file": "lib/check_cli.sh",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/jinqians/proxy-stack",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 26
+        },
+        {
+          "file": "README_EN.md",
+          "line": 26
+        },
+        {
+          "file": "README_KO.md",
+          "line": 18
+        },
+        {
+          "file": "README_RU.md",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/jinqians/proxy-stack.git",
+      "locations": [
+        {
+          "file": "FORK_GUIDE.md",
+          "line": 119
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/jqlang/jq/releases/download/jq-${PSM_JQ_VERSION}",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 208
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/shadowsocks/shadowsocks-rust/releases/download/${tag}/${file}",
+      "locations": [
+        {
+          "file": "lib/ssrust.sh",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/xtls",
+      "locations": [
+        {
+          "file": "lib/xray/core.sh",
+          "line": 271
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/zhboner/realm/releases",
+      "locations": [
+        {
+          "file": "lib/realm.sh",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "url": "https://ifconfig.me",
+      "locations": [
+        {
+          "file": "lib/common.sh",
+          "line": 368
+        }
+      ]
+    },
+    {
+      "url": "https://ilemonra.in/LemonBenchIntl",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 179
+        }
+      ]
+    },
+    {
+      "url": "https://img.shields.io/badge/Debian%20·%20Ubuntu%20·%20Alpine%20·%20RHEL-supported-1793D1?logo=linux&logoColor=white",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "url": "https://img.shields.io/badge/Debian%20·%20Ubuntu%20·%20Alpine%20·%20RHEL-支持-1793D1?logo=linux&logoColor=white",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "url": "https://img.shields.io/badge/License-AGPL--3.0-blue",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 12
+        },
+        {
+          "file": "README_EN.md",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "url": "https://img.shields.io/github/stars/bigyvc/proxy-stack?style=flat&logo=github&color=yellow",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 14
+        },
+        {
+          "file": "README_EN.md",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "url": "https://ipinfo.io/${ip}/json",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 94
+        }
+      ]
+    },
+    {
+      "url": "https://ipinfo.io/org",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "url": "https://kb.nssurge.com/surge-knowledge-base/release-notes/snell",
+      "locations": [
+        {
+          "file": "lib/snell.sh",
+          "line": 70
+        }
+      ]
+    },
+    {
+      "url": "https://panel.example.com",
+      "locations": [
+        {
+          "file": "tests/integration/audit.sh",
+          "line": 152
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 18
+        },
+        {
+          "file": "README_KO.md",
+          "line": 11
+        },
+        {
+          "file": "README_KO.md",
+          "line": 42
+        },
+        {
+          "file": "README_RU.md",
+          "line": 11
+        },
+        {
+          "file": "README_RU.md",
+          "line": 42
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/faq",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/faq#domain",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 90
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/faq#not-working",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 92
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/features/migrate",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 93
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/features/port-443",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 51
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/features/users",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 53
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/guide/choose-protocol",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 91
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/guide/cores",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/guide/quick-start",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/reference/cli",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/en/reference/systems",
+      "locations": [
+        {
+          "file": "README_EN.md",
+          "line": 86
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/faq",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/faq#domain",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 90
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/faq#not-working",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 92
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/features/migrate",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 93
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/features/port-443",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 51
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/features/users",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 53
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/guide/choose-protocol",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 91
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/guide/cores",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/guide/quick-start",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/reference/cli",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "url": "https://psm-docs.pages.dev/reference/systems",
+      "locations": [
+        {
+          "file": "README.md",
+          "line": 86
+        }
+      ]
+    },
+    {
+      "url": "https://psm.example.com",
+      "locations": [
+        {
+          "file": "agent/main.go",
+          "line": 21
+        },
+        {
+          "file": "agent/main.go",
+          "line": 131
+        },
+        {
+          "file": "agent/main.go",
+          "line": 140
+        },
+        {
+          "file": "agent/main_test.go",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "url": "https://psm.example.com/",
+      "locations": [
+        {
+          "file": "agent/main_test.go",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "url": "https://psm.example.com/?a=1",
+      "locations": [
+        {
+          "file": "agent/main_test.go",
+          "line": 183
+        }
+      ]
+    },
+    {
+      "url": "https://psm.jinqians.com",
+      "locations": [
+        {
+          "file": "CHANGELOG.md",
+          "line": 105
+        },
+        {
+          "file": "tests/fork-source.py",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "url": "https://quake.360.net/api/v3/search/quake_service",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 224
+        }
+      ]
+    },
+    {
+      "url": "https://quake.360.net/api/v3/user/info",
+      "locations": [
+        {
+          "file": "lib/xray/sni_finder.sh",
+          "line": 139
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/1-stream/RegionRestrictionCheck/main/check.sh",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 187
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set",
+      "locations": [
+        {
+          "file": "lib/singbox/routing.sh",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set",
+      "locations": [
+        {
+          "file": "lib/singbox/routing.sh",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh",
+      "locations": [
+        {
+          "file": ".github/ISSUE_TEMPLATE/installation_failure.md",
+          "line": 22
+        },
+        {
+          "file": "FORK_GUIDE.md",
+          "line": 39
+        },
+        {
+          "file": "FORK_GUIDE.md",
+          "line": 45
+        },
+        {
+          "file": "README.md",
+          "line": 35
+        },
+        {
+          "file": "README.md",
+          "line": 38
+        },
+        {
+          "file": "README_EN.md",
+          "line": 35
+        },
+        {
+          "file": "README_EN.md",
+          "line": 38
+        },
+        {
+          "file": "README_KO.md",
+          "line": 25
+        },
+        {
+          "file": "README_RU.md",
+          "line": 25
+        },
+        {
+          "file": "bootstrap.sh",
+          "line": 5
+        },
+        {
+          "file": "bootstrap.sh",
+          "line": 11
+        },
+        {
+          "file": "tests/fork-source.py",
+          "line": 14
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh}",
+      "locations": [
+        {
+          "file": "bootstrap.sh",
+          "line": 32
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash",
+      "locations": [
+        {
+          "file": "lib/ruleset/core.sh",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/jinqians/snell.sh/main/snell.sh",
+      "locations": [
+        {
+          "file": "lib/snell.sh",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "url": "https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh",
+      "locations": [
+        {
+          "file": "lib/ssrust.sh",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "url": "https://run.NodeQuality.com",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 169
+        }
+      ]
+    },
+    {
+      "url": "https://sing-box.sagernet.org",
+      "locations": [
+        {
+          "file": "lib/singbox/core.sh",
+          "line": 179
+        }
+      ]
+    },
+    {
+      "url": "https://wiki.metacubex.one",
+      "locations": [
+        {
+          "file": "lib/mihomo/core.sh",
+          "line": 113
+        }
+      ]
+    },
+    {
+      "url": "https://www.bing.com",
+      "locations": [
+        {
+          "file": "lib/mihomo/hysteria2.sh",
+          "line": 12
+        },
+        {
+          "file": "lib/node_cli.sh",
+          "line": 605
+        },
+        {
+          "file": "lib/singbox/hysteria2.sh",
+          "line": 12
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 535
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 549
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 564
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 578
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 736
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 752
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 768
+        },
+        {
+          "file": "tests/fixtures/node-builders.json",
+          "line": 784
+        },
+        {
+          "file": "tests/snapshots/mihomo-hy2-bbr.json",
+          "line": 8
+        },
+        {
+          "file": "tests/snapshots/mihomo-hy2-ech.json",
+          "line": 8
+        },
+        {
+          "file": "tests/snapshots/mihomo-hy2-gecko.json",
+          "line": 7
+        },
+        {
+          "file": "tests/snapshots/mihomo-hy2-salamander.json",
+          "line": 7
+        },
+        {
+          "file": "tests/snapshots/singbox-hy2-bbr.json",
+          "line": 8
+        },
+        {
+          "file": "tests/snapshots/singbox-hy2-ech.json",
+          "line": 7
+        },
+        {
+          "file": "tests/snapshots/singbox-hy2-gecko.json",
+          "line": 7
+        },
+        {
+          "file": "tests/snapshots/singbox-hy2-salamander.json",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "url": "https://www.gnu.org/licenses/",
+      "locations": [
+        {
+          "file": "LICENSE",
+          "line": 646
+        },
+        {
+          "file": "LICENSE",
+          "line": 661
+        }
+      ]
+    },
+    {
+      "url": "https://www.gstatic.com/generate_204",
+      "locations": [
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 123
+        },
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 157
+        },
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 269
+        },
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 276
+        },
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 297
+        },
+        {
+          "file": "tests/integration/e2e.sh",
+          "line": 317
+        },
+        {
+          "file": "tests/integration/migrate-dst.sh",
+          "line": 78
+        },
+        {
+          "file": "tests/integration/nginx443.sh",
+          "line": 91
+        },
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 86
+        },
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 132
+        },
+        {
+          "file": "tests/integration/relay.sh",
+          "line": 141
+        },
+        {
+          "file": "tests/integration/users.sh",
+          "line": 98
+        }
+      ]
+    },
+    {
+      "url": "https://www.gstatic.com/generate_204;",
+      "locations": [
+        {
+          "file": "tests/integration/panelside.sh",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "url": "https://www.vpngate.net/api/iphone/",
+      "locations": [
+        {
+          "file": "lib/vpngate/core.sh",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "url": "https://x.example.com/psm-sub/$TOK/sub.txt",
+      "locations": [
+        {
+          "file": "tests/integration/migrate-src.sh",
+          "line": 61
+        }
+      ]
+    },
+    {
+      "url": "https://x.example.com/psm-sub/$tok/sub.txt",
+      "locations": [
+        {
+          "file": "tests/integration/migrate-dst.sh",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "url": "https://x.example.com:21042/",
+      "locations": [
+        {
+          "file": "tests/integration/nginx443.sh",
+          "line": 125
+        }
+      ]
+    },
+    {
+      "url": "https://yabs.sh",
+      "locations": [
+        {
+          "file": "lib/vps_test.sh",
+          "line": 174
+        }
+      ]
+    },
+    {
+      "url": "https://{{DOMAIN}}",
+      "locations": [
+        {
+          "file": "templates/hysteria/config.yaml.tpl",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "url": "https://…",
+      "locations": [
+        {
+          "file": "agent/main.go",
+          "line": 1149
+        }
+      ]
+    }
+  ]
+}

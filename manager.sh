@@ -277,12 +277,12 @@ _banner() {
     local WH='\033[97m'   # bright white
     local DM='\033[2m'    # dim
 
-    # ASCII art — "JQ PSM" with letter spacing (J Q · P S M)
-    local L1='     _    ___          ____    ____    __  __ '
-    local L2='    | |  / _ \        |  _ \  / ___| |  \/  |'
-    local L3=" _  | | | | | |       | |_) | \___ \ | |\/| |"
-    local L4='| |_| | | |_| |       |  __/   ___) | | |  | |'
-    local L5=' \___/   \__\_|       |_|     |____/ |_|  |_|'
+    # ASCII art — PSM; this fork is maintained by bigyvc
+    local L1=' ____    ____    __  __ '
+    local L2='|  _ \  / ___| | \/  |'
+    local L3='| |_) | \___ \ | |\/| |'
+    local L4='|  __/   ___) | | |  | |'
+    local L5='|_|     |____/  |_|  |_|'
 
     # The PSM logo (the documentation site's "P" with a dot), five rows beside
     # the title, in the logo's own green and blue. Each row is 11 columns wide.
@@ -316,7 +316,7 @@ _banner() {
     printf "  %b${BOLD}${BB}%s${NC}\n"  "${LG[3]:-}" "$L4"
     printf "  %b${BOLD}${BC}%s${NC}\n"  "${LG[4]:-}" "$L5"
     printf "\n"
-    printf "  ${BOLD}${WH}Proxy Stack Manager${NC}  ${DM}·····${NC}  ${YELLOW}◆ https://jinqians.com${NC}\n"
+    printf "  ${BOLD}${WH}Dayv Proxy Stack Manager${NC}  ${DM}·····${NC}  ${YELLOW}◆ https://github.com/bigyvc/proxy-stack${NC}\n"
     printf "  ${BLUE}──────────────────────────────────────────────${NC}\n"
     # 两列布局：标签固定 9 列（最长 Hysteria2），左列值按显示宽度补齐到 16 列
     # （值可能是中文"已安装"，占 2 显示列/字，必须用 _mpad 而不是 %-16s）

@@ -18,7 +18,7 @@ MSG[common.press_enter]="Press Enter to continue..."
 MSG[i18n.unsupported]="Unsupported language: %s"
 
 # ── main menu ─────────────────────────────────────────────────────────────────
-MSG[menu.main.title]="JQ's Proxy Stack Manager"
+MSG[menu.main.title]="Dayv's Proxy Stack Manager"
 MSG[menu.main.system]="System Management"
 MSG[menu.main.nginx]="Nginx Management"
 MSG[menu.main.xray]="Xray Management"

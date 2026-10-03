@@ -1,0 +1,242 @@
+== ci-final.log ==
+
+== bash syntax ==
+checked 212 shell files
+
+== variables next to non-ASCII text ==
+no $NAME directly before non-ASCII text
+
+== ShellCheck ==
+checked 120 shell files and 88 language catalogs
+
+== i18n ==
+== key 对齐 ==
+  OK：zh/en 键集合一致（3604 个键）
+  OK：zh/ko 键集合一致（3604 个键）
+  OK：zh/ru 键集合一致（3604 个键）
+
+== 源码文件残留中文（非注释行；0 = 该文件所有用户输出已可切换语言）==
+  已迁移（残留 0）：116 / 117 个文件
+  待迁移：
+  tests/integration/audit.sh                   3 行
+
+== config regression ==
+ok: xray-reality
+ok: xray-vision
+ok: xray-trojan
+ok: xray-reality-min-client-ver
+ok: singbox-reality
+ok: singbox-snell-v5-obfs
+ok: singbox-snell-v6
+ok: mihomo-reality
+ok: singbox-trojan
+ok: mihomo-trojan
+ok: xray-vmess
+ok: singbox-vmess
+ok: mihomo-vmess
+ok: xray-socks
+ok: singbox-socks
+ok: mihomo-socks
+ok: xray-xhttp-httpupgrade
+ok: xray-xhttp-h2
+ok: xray-xhttp-mkcp
+ok: xray-xhttp-mkcp-finalmask
+ok: xray-xhttp-mkcp-mkcplegacy
+ok: xray-xhttp-reality-ws
+ok: xray-xhttp-reality-grpc
+ok: xray-xhttp-legacy-xhttp
+ok: xray-xhttp-legacy-upgrade
+ok: xray-xhttp-legacy-grpc
+ok: xray-xhttp-legacy-reality
+ok: xray-route-all
+ok: xray-route-geosite
+ok: singbox-vless-vision
+ok: singbox-vless-ws
+ok: singbox-vless-grpc
+ok: singbox-vless-h2
+ok: singbox-vless-hu
+ok: singbox-vless-quic
+ok: mihomo-vless-vision
+ok: mihomo-vless-ws
+ok: mihomo-vless-grpc
+ok: mihomo-vless-xhttp
+ok: xray-vpngate
+ok: mihomo-vpngate
+ok: singbox-vpngate-legacy
+ok: singbox-vpngate
+ok: ruleset-parse
+ok: ruleset-singbox-source
+ok: ruleset-xray-inline
+ok: singbox-hy2-salamander
+ok: singbox-hy2-gecko
+ok: mihomo-hy2-salamander
+ok: mihomo-hy2-gecko
+ok: xray-hy2-plain
+ok: xray-hy2-gecko
+ok: singbox-tuic
+ok: mihomo-tuic
+ok: singbox-wireguard
+ok: singbox-hy2-ech
+ok: mihomo-hy2-ech
+ok: singbox-hy2-bbr
+ok: mihomo-hy2-bbr
+ok: xray-hy2-bbr
+ok: xray-hy2-bbr-plain
+ok: xray-vision-enc
+ok: xray-reality-enc
+ok: xray-xhttp-enc
+ok: xray-xhttp-mkcp-enc
+ok: xray-xhttp-mkcp-enc-finalmask
+ok: xray-xhttp-mkcp-enc-mkcplegacy
+ok: mihomo-vless-enc
+ok: mihomo-ss-stls
+ok: mihomo-snell-stls
+ok: relay-gost
+ok: relay-realm
+config regression: 72 snapshots passed
+ok: doctor JSON contract (exit 1)
+./lib/node_cli.sh: line 114: printf: write error: Broken pipe
+ok: node JSON contract, store-only CRUD, redaction, and usage exit code
+ok: fresh bootstrap uses requested fork and invokes installer
+ok: existing bootstrap switches origin and pulls the fork revision
+ok: detached HEAD rejected before update reset
+fork source checks passed
+
+CI checks passed
+
+== tests-final.log ==
+
+== config regression ==
+ok: xray-reality
+ok: xray-vision
+ok: xray-trojan
+ok: xray-reality-min-client-ver
+ok: singbox-reality
+ok: singbox-snell-v5-obfs
+ok: singbox-snell-v6
+ok: mihomo-reality
+ok: singbox-trojan
+ok: mihomo-trojan
+ok: xray-vmess
+ok: singbox-vmess
+ok: mihomo-vmess
+ok: xray-socks
+ok: singbox-socks
+ok: mihomo-socks
+ok: xray-xhttp-httpupgrade
+ok: xray-xhttp-h2
+ok: xray-xhttp-mkcp
+ok: xray-xhttp-mkcp-finalmask
+ok: xray-xhttp-mkcp-mkcplegacy
+ok: xray-xhttp-reality-ws
+ok: xray-xhttp-reality-grpc
+ok: xray-xhttp-legacy-xhttp
+ok: xray-xhttp-legacy-upgrade
+ok: xray-xhttp-legacy-grpc
+ok: xray-xhttp-legacy-reality
+ok: xray-route-all
+ok: xray-route-geosite
+ok: singbox-vless-vision
+ok: singbox-vless-ws
+ok: singbox-vless-grpc
+ok: singbox-vless-h2
+ok: singbox-vless-hu
+ok: singbox-vless-quic
+ok: mihomo-vless-vision
+ok: mihomo-vless-ws
+ok: mihomo-vless-grpc
+ok: mihomo-vless-xhttp
+ok: xray-vpngate
+ok: mihomo-vpngate
+ok: singbox-vpngate-legacy
+ok: singbox-vpngate
+ok: ruleset-parse
+ok: ruleset-singbox-source
+ok: ruleset-xray-inline
+ok: singbox-hy2-salamander
+ok: singbox-hy2-gecko
+ok: mihomo-hy2-salamander
+ok: mihomo-hy2-gecko
+ok: xray-hy2-plain
+ok: xray-hy2-gecko
+ok: singbox-tuic
+ok: mihomo-tuic
+ok: singbox-wireguard
+ok: singbox-hy2-ech
+ok: mihomo-hy2-ech
+ok: singbox-hy2-bbr
+ok: mihomo-hy2-bbr
+ok: xray-hy2-bbr
+ok: xray-hy2-bbr-plain
+ok: xray-vision-enc
+ok: xray-reality-enc
+ok: xray-xhttp-enc
+ok: xray-xhttp-mkcp-enc
+ok: xray-xhttp-mkcp-enc-finalmask
+ok: xray-xhttp-mkcp-enc-mkcplegacy
+ok: mihomo-vless-enc
+ok: mihomo-ss-stls
+ok: mihomo-snell-stls
+ok: relay-gost
+ok: relay-realm
+config regression: 72 snapshots passed
+ok: doctor JSON contract (exit 1)
+ok: node JSON contract, store-only CRUD, redaction, and usage exit code
+ok: fresh bootstrap uses requested fork and invokes installer
+ok: POSIX sh shim re-downloads this fork bootstrap, then installs
+ok: existing bootstrap switches origin and pulls the fork revision
+ok: detached HEAD rejected before update reset
+fork source checks passed
+
+CI checks passed
+
+== fork-source-final.log ==
+ok: fresh bootstrap uses requested fork and invokes installer
+ok: POSIX sh shim re-downloads this fork bootstrap, then installs
+ok: existing bootstrap switches origin and pulls the fork revision
+ok: detached HEAD rejected before update reset
+fork source checks passed
+
+== structured-files.log ==
+{
+  "json": 73,
+  "yaml": 13,
+  "workflow_run_scripts": 10,
+  "svg": 1
+}
+All parsed successfully; all workflow run blocks passed bash -n.
+
+== go-test.log ==
+ok  	github.com/bigyvc/proxy-stack/agent	0.016s
+
+== gofmt.log ==
+Passed: command exited successfully, no diagnostics.
+
+== go-vet.log ==
+Passed: command exited successfully, no diagnostics.
+
+== actionlint.log ==
+Passed: command exited successfully, no diagnostics.
+
+== diff-check.log ==
+Passed: command exited successfully, no diagnostics.
+
+== Agent cross-builds ==
+Go 1.27.1; CGO_ENABLED=0 GOOS=linux; amd64, arm64 and arm GOARM=7 builds all exited 0.
+
+psm-agent-amd64 SHA256 afcd74e5facd2a698a50961cf364e85e0d6992665028d1e549cbf1ae09f2db2d
+
+psm-agent-arm SHA256 d15c0ca895c3c2df4bf29dba19a4291453dceb8355c257b1beee6377d0bf6e55
+
+psm-agent-arm64 SHA256 dab10c1d7c8623956ebc66887291d1e297b52aa41399490e9b92b3ad25b47b47
+
+== Baseline coverage ==
+{
+  "baseline_files": 327,
+  "text": 320,
+  "binary": 7,
+  "secret_pattern_hits": []
+}
+
+== README local resources ==
+All README local links and image sources exist.

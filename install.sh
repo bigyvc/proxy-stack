@@ -13,11 +13,11 @@ require_root
 banner() {
     clear 2>/dev/null || true   # no TERM (cloud-init / piped install) → clear fails, and set -e would abort
     local BC='\033[96m' BB='\033[94m' WH='\033[97m' DM='\033[2m'
-    local L1='     _    ___          ____    ____    __  __ '
-    local L2='    | |  / _ \        |  _ \  / ___| |  \/  |'
-    local L3=" _  | | | | | |       | |_) | \___ \ | |\/| |"
-    local L4='| |_| | | |_| |       |  __/   ___) | | |  | |'
-    local L5=' \___/   \__\_|       |_|     |____/ |_|  |_|'
+    local L1=' ____    ____    __  __ '
+    local L2='|  _ \  / ___| | \/  |'
+    local L3='| |_) | \___ \ | |\/| |'
+    local L4='|  __/   ___) | | |  | |'
+    local L5='|_|     |____/  |_|  |_|'
     echo ""
     printf "  ${BOLD}${BC}%s${NC}\n"  "$L1"
     printf "  ${BOLD}${BC}%s${NC}\n"  "$L2"
@@ -25,7 +25,7 @@ banner() {
     printf "  ${BOLD}${BB}%s${NC}\n"  "$L4"
     printf "  ${BOLD}${BC}%s${NC}\n"  "$L5"
     printf "\n"
-    printf "  ${BOLD}${WH}Proxy Stack Manager${NC}  ${DM}·····${NC}  ${YELLOW}◆ jinqians.com${NC}\n"
+    printf "  ${BOLD}${WH}Dayv Proxy Stack Manager${NC}  ${DM}·····${NC}  ${YELLOW}◆ https://github.com/bigyvc/proxy-stack${NC}\n"
     echo ""
 }
 

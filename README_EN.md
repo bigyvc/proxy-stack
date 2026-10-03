@@ -1,21 +1,21 @@
 <div align="center">
 
-<img src=".github/assets/banner.png" alt="PSM: your own proxy server on a VPS, in one command" width="820">
+<img src=".github/assets/banner.svg" alt="PSM: your own proxy server on a VPS, in one command" width="820">
 
-# PSM · Proxy Stack Manager
+# Dayv PSM · Proxy Stack Manager
 
 **Your own proxy server on a VPS, in one command: VLESS REALITY, Hysteria2, TUIC, AnyTLS**<br>
 Xray / sing-box / mihomo · port 443 sharing · per-user accounts · traffic quotas · server migration
 
 <p>
-  <a href="https://github.com/jinqians/proxy-stack/actions/workflows/ci.yml"><img src="https://github.com/jinqians/proxy-stack/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/bigyvc/proxy-stack/actions/workflows/ci.yml"><img src="https://github.com/bigyvc/proxy-stack/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Debian%20·%20Ubuntu%20·%20Alpine%20·%20RHEL-supported-1793D1?logo=linux&logoColor=white" alt="Systems">
-  <img src="https://img.shields.io/github/stars/jinqians/proxy-stack?style=flat&logo=github&color=yellow" alt="Stars">
+  <img src="https://img.shields.io/github/stars/bigyvc/proxy-stack?style=flat&logo=github&color=yellow" alt="Stars">
 </p>
 
 <p>
-  <a href="https://psm-docs.pages.dev/en/"><b>📖 Documentation</b></a> ·
+  <a href="https://psm-docs.pages.dev/en/"><b>📖 Upstream documentation</b></a> ·
   <a href="https://psm-docs.pages.dev/en/guide/quick-start">Quick start</a> ·
   <a href="https://psm-docs.pages.dev/en/faq">FAQ</a> ·
   <a href="README.md">简体中文</a>
@@ -23,18 +23,23 @@ Xray / sing-box / mihomo · port 443 sharing · per-user accounts · traffic quo
 
 </div>
 
+Maintained by **bigyvc (Dayv)**, based on [jinqians/proxy-stack](https://github.com/jinqians/proxy-stack), under AGPL-3.0. External documentation and historical screenshots belong to upstream and may differ from this fork.
+
+See [fork maintenance guide](FORK_GUIDE.md), [audit](AUDIT.md), and [issues](https://github.com/bigyvc/proxy-stack/issues).
+
 ## Install
 
 As root on your VPS:
 
 ```bash
-bash <(curl -fsSL https://psm.jinqians.com)
+bash <(curl -fsSL https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh)
 ```
 
-Then run `psm` to open the menu. On Alpine: `wget -qO- https://psm.jinqians.com | sh`.
+Then run `psm` to open the menu. On Alpine: `wget -qO- https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh | sh`.
 
 <p align="center">
   <img src=".github/assets/menu.en.png" alt="PSM main menu" width="720">
+  <br><sub>Upstream screenshot / 原项目界面示例；本分支名称为 Dayv PSM。</sub>
 </p>
 
 ## What it does
@@ -78,7 +83,7 @@ All commands: [CLI reference](https://psm-docs.pages.dev/en/reference/cli).
 
 ## Supported systems
 
-Debian, Ubuntu, Alpine and RHEL / CentOS / Rocky Linux / AlmaLinux, on x86_64 and arm64. Every commit runs the full test suites on **Debian 13, Ubuntu 24.04 / 22.04, Alpine 3.22, Rocky Linux 9 and AlmaLinux 8**. Details: [Supported systems](https://psm-docs.pages.dev/en/reference/systems).
+Debian, Ubuntu, Alpine and RHEL / CentOS / Rocky Linux / AlmaLinux, on x86_64 and arm64. This fork runs static checks, config regressions and Agent tests by default. Full multi-system integration tests must be enabled manually. Details: [Supported systems](https://psm-docs.pages.dev/en/reference/systems).
 
 ## FAQ
 
@@ -86,15 +91,6 @@ Debian, Ubuntu, Alpine and RHEL / CentOS / Rocky Linux / AlmaLinux, on x86_64 an
 - **Which protocol?** REALITY first, Hysteria2 for lossy networks. [More](https://psm-docs.pages.dev/en/guide/choose-protocol)
 - **A node does not connect?** Run `psm doctor --fix`, then check your cloud security group. [More](https://psm-docs.pages.dev/en/faq#not-working)
 - **The IP got blocked?** Get a new VPS and `psm migrate push` everything over. [More](https://psm-docs.pages.dev/en/features/migrate)
-
-## Donate
-
-If PSM helps you, you can buy the author a coffee ☕️ (USDT):
-
-| Network | Address |
-| --- | --- |
-| **TRC20** | `TUe1x22n9FPAgLt6YFcQyxWgvTZFNgKBgM` |
-| **Polygon** | `0x5632f6d76a03543c53d750918c9c6a4c372f1597` |
 
 ## License
 

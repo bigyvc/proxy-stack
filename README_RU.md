@@ -1,26 +1,28 @@
 <div align="center">
 
-<img src=".github/assets/banner.png" alt="PSM" width="820">
+<img src=".github/assets/banner.svg" alt="PSM" width="820">
 
-# PSM · Proxy Stack Manager
+# Dayv PSM · Proxy Stack Manager
 
 **Свой прокси-сервер на VPS одной командой: VLESS REALITY, Hysteria2, TUIC, AnyTLS**<br>
 Xray / sing-box / mihomo · общий порт 443 · учётные записи · лимиты трафика · перенос сервера
 
 <p>
-  <a href="https://psm-docs.pages.dev/en/"><b>📖 Документация (English)</b></a> ·
+  <a href="https://psm-docs.pages.dev/en/"><b>📖 Документация исходного проекта (English)</b></a> ·
   <a href="README_EN.md">English</a> ·
   <a href="README.md">简体中文</a>
 </p>
 
 </div>
 
+Форк [jinqians/proxy-stack](https://github.com/jinqians/proxy-stack), сопровождаемый **bigyvc (Dayv)**, под AGPL-3.0. Внешняя документация относится к исходному проекту. [Руководство](FORK_GUIDE.md) · [Аудит](AUDIT.md).
+
 ## Установка
 
 На VPS от root:
 
 ```bash
-bash <(curl -fsSL https://psm.jinqians.com)
+bash <(curl -fsSL https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh)
 ```
 
 Затем запустите `psm`, откроется меню. Интерфейс есть на русском (пункт «Language» в меню).

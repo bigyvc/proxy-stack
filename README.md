@@ -1,21 +1,21 @@
 <div align="center">
 
-<img src=".github/assets/banner.png" alt="PSM：VPS 科学上网一键管理脚本" width="820">
+<img src=".github/assets/banner.svg" alt="PSM：VPS 科学上网一键管理脚本" width="820">
 
-# PSM · VPS 科学上网一键管理脚本
+# Dayv PSM · VPS 科学上网一键管理脚本
 
 **一键搭建 VLESS REALITY、Hysteria2、Snell、TUIC、AnyTLS、Shadowsocks 2022(SS2022) 节点**<br>
 Xray / sing-box / mihomo 三内核 · 443 端口复用 · 多用户 · 流量配额 · 一键迁移
 
 <p>
-  <a href="https://github.com/jinqians/proxy-stack/actions/workflows/ci.yml"><img src="https://github.com/jinqians/proxy-stack/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/bigyvc/proxy-stack/actions/workflows/ci.yml"><img src="https://github.com/bigyvc/proxy-stack/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Debian%20·%20Ubuntu%20·%20Alpine%20·%20RHEL-支持-1793D1?logo=linux&logoColor=white" alt="Systems">
-  <img src="https://img.shields.io/github/stars/jinqians/proxy-stack?style=flat&logo=github&color=yellow" alt="Stars">
+  <img src="https://img.shields.io/github/stars/bigyvc/proxy-stack?style=flat&logo=github&color=yellow" alt="Stars">
 </p>
 
 <p>
-  <a href="https://psm-docs.pages.dev"><b>📖 使用文档</b></a> ·
+  <a href="https://psm-docs.pages.dev"><b>📖 上游使用文档</b></a> ·
   <a href="https://psm-docs.pages.dev/guide/quick-start">1 分钟快速开始</a> ·
   <a href="https://psm-docs.pages.dev/faq">常见问题</a> ·
   <a href="README_EN.md">English</a>
@@ -23,18 +23,23 @@ Xray / sing-box / mihomo 三内核 · 443 端口复用 · 多用户 · 流量配
 
 </div>
 
+由 **bigyvc（Dayv）** 维护，基于 [jinqians/proxy-stack](https://github.com/jinqians/proxy-stack)。保留 AGPL-3.0 和原项目贡献记录。外部文档属于上游，可能与本分支存在差异。
+
+本分支说明：[维护与上传指南](FORK_GUIDE.md) · [修改审计](AUDIT.md) · [问题反馈](https://github.com/bigyvc/proxy-stack/issues)。
+
 ## 一键安装
 
 在 VPS 上以 root 执行：
 
 ```bash
-bash <(curl -fsSL https://psm.jinqians.com)
+bash <(curl -fsSL https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh)
 ```
 
-装好后输入 `psm` 打开管理菜单。Alpine 用 `wget -qO- https://psm.jinqians.com | sh`。
+装好后输入 `psm` 打开管理菜单。Alpine 用 `wget -qO- https://raw.githubusercontent.com/bigyvc/proxy-stack/main/bootstrap.sh | sh`。
 
 <p align="center">
   <img src=".github/assets/menu.zh.png" alt="PSM 主菜单" width="720">
+  <br><sub>Upstream screenshot / 原项目界面示例；本分支名称为 Dayv PSM。</sub>
 </p>
 
 ## 能做什么
@@ -78,7 +83,7 @@ psm migrate push root@新服务器               # 搬到新 VPS
 
 ## 支持的系统
 
-Debian、Ubuntu、Alpine、RHEL / CentOS / Rocky Linux / AlmaLinux 等，x86_64 与 arm64。每次提交都在 **Debian 13、Ubuntu 24.04 / 22.04、Alpine 3.22、Rocky Linux 9、AlmaLinux 8** 上跑完整测试。详见 [支持的系统](https://psm-docs.pages.dev/reference/systems)。
+Debian、Ubuntu、Alpine、RHEL / CentOS / Rocky Linux / AlmaLinux 等，x86_64 与 arm64。本分支默认 CI 运行静态检查、配置回归和 Agent 测试；多系统完整集成测试需手动启用。详见 [支持的系统](https://psm-docs.pages.dev/reference/systems)。
 
 ## 常见问题
 
@@ -86,15 +91,6 @@ Debian、Ubuntu、Alpine、RHEL / CentOS / Rocky Linux / AlmaLinux 等，x86_64 
 - **协议怎么选？** 先上 REALITY，网络差再加 Hysteria2。[更多](https://psm-docs.pages.dev/guide/choose-protocol)
 - **节点连不上？** 先跑 `psm doctor --fix`，再检查云服务商安全组。[更多](https://psm-docs.pages.dev/faq#not-working)
 - **IP 被封了？** 换台 VPS，`psm migrate push` 一条命令搬过去。[更多](https://psm-docs.pages.dev/features/migrate)
-
-## 捐赠
-
-如果这个项目对你有帮助，欢迎请作者喝杯咖啡 ☕️（USDT）：
-
-| 网络 | 地址 |
-| --- | --- |
-| **TRC20** | `TUe1x22n9FPAgLt6YFcQyxWgvTZFNgKBgM` |
-| **Polygon** | `0x5632f6d76a03543c53d750918c9c6a4c372f1597` |
 
 ## 许可证
 

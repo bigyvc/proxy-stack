@@ -18,7 +18,7 @@ MSG[common.press_enter]="계속하려면 Enter 키를 누르세요..."
 MSG[i18n.unsupported]="지원하지 않는 언어입니다: %s"
 
 # ── main menu ─────────────────────────────────────────────────────────────────
-MSG[menu.main.title]="JQ's Proxy Stack Manager"
+MSG[menu.main.title]="Dayv's Proxy Stack Manager"
 MSG[menu.main.system]="시스템 관리"
 MSG[menu.main.nginx]="Nginx 관리"
 MSG[menu.main.xray]="Xray 관리"
